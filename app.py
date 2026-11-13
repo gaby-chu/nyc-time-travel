@@ -747,6 +747,28 @@ async def research(ctx: RunContextWrapper[Research], task: str, era: str, questi
     return output
 
 
+# --- The census core: the same numbers in every run ---
+
+async def census_core(state: Research) -> str:
+    """Fetch the neighborhood's birthplace figures for 2000 and the latest ACS in code, before research,
+    so every run's settlement table rests on the same numbers (the researchers' own searches vary from
+    run to run). Added to the findings as from the "Census desk". Returns a note for the Lead."""
+    code, texts = state.nta["code"], []
+    results = await asyncio.gather(*[asyncio.to_thread(census.profile, code, year, "birthplace")
+                                     for year in (2000, census.LAST_ACS)], return_exceptions=True)
+    for year, result in zip((2000, census.LAST_ACS), results):
+        text = failed(f"Census birthplace {year} for {code}", result) if isinstance(result, Exception) \
+            else census.to_text(result)
+        state.fetched.update(checker.clean_url(url) for url in URL.findall(text))
+        state.tool_calls.append({"agent": "Census desk", "name": "census_profile",
+                                 "args": {"nta_code": code, "year": year, "topic": "birthplace"}, "result": text[:2000]})
+        texts.append(text)
+    state.findings.append("Census desk (settlement, today): the largest birthplace groups of the foreign-born, "
+                          "in 2000 and today, fetched for every run\n\n" + "\n\n".join(texts))
+    return ("The census birthplace figures for 2000 and today are already in the findings (from the Census desk): "
+            "don't send a researcher just for those.")
+
+
 # --- The lead: plans, fans out to researchers, and checks for gaps ---
 
 lead = Agent(
@@ -830,7 +852,8 @@ in this order and with exactly these headings (the page lays the report out by t
   per religion or institution: a Quaker meeting house or a Methodist church is evidence for the
   community that built it (put it in that row's Evidence), not a row of its own.
   Rows: the groups the question asks about, the groups the findings date, and the three or four
-  largest groups in today's census. Leave out a group whose only evidence is a small census share
+  largest groups in the Census desk's figures, with their shares in 2000 and today (a share that
+  fell or rose says something about Peak and Declined/moved). Leave out a group whose only evidence is a small census share
   (under 5%) with every date "Not found": mention it in the Today era instead.
 - What remains: surviving buildings, institutions, names, and what's gone.
 - What the records don't show: thin eras, missing groups, approximate census boundaries.
@@ -880,7 +903,7 @@ def link_bare_urls(text: str) -> str:
     return BARE_URL.sub(link, text)
 
 
-FINDING_HEAD = re.compile(r"^(Researcher \d+) \(([^,]+), ([^)]+)\): (.*)$", re.MULTILINE)
+FINDING_HEAD = re.compile(r"^([^()\n]+) \(([^,]+), ([^)]+)\): (.*)$", re.MULTILINE)
 
 
 def findings_report(state: Research) -> str:
@@ -981,6 +1004,8 @@ async def deep_research(question: str, hooks: PanelHooks, asked: str | None = No
              + (f"\nGroup the user asked about: {c.group}" if c.group else "")
              + (f"\nNote: {c.note}" if c.note else ""))
     hooks.activity("Clarifier", f"ready: {nta['name']} ({nta['code']}), {', '.join(c.question_types)}")
+    about += "\n" + await census_core(research_run)
+    hooks.activity("Census desk", "fetched the birthplace figures for 2000 and today")
 
     # 1. Research: plan, fan out, check for gaps
     try:

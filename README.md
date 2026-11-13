@@ -68,121 +68,46 @@ To load it: it's plain JSON keyed by NTA code (`json.load(open("data/ntas.json")
 
 ## Sample queries
 
-Three queries for testing. For each: the answer we expect, checked directly at the source before running
-the agent; where it comes from; the agent's answer; and the same model's answer with no tools and no
-system prompt (`vertex_ai/gemini-3.5-flash`, the model behind the agent's Lead and Writer, sent only the
-question). Excerpts are below; the full answers are in [samples/](samples/). Both answers in each pair were
-produced on the same day.
+Three test queries. For each: the expected answer, checked at the source before running the agent; an
+excerpt of the agent's answer; and the same model with no tools or system prompt
+(`vertex_ai/gemini-3.5-flash`, sent only the question). Full answers are in [samples/](samples/).
 
 ### 1. "What happened to Little Germany in the East Village after the General Slocum disaster?"
 
-**Expected answer.** On June 15, 1904, the excursion steamboat *General Slocum*, chartered for a church
-picnic, burned, killing more than 1,000 neighborhood residents, including 784 members of St. Mark's
-Evangelical Lutheran Church. The fire is "widely considered the symbolic end of Kleindeutschland"; the
-center of German New York was already shifting uptown to Yorkville. St. Mark's church building later
-became the Community Synagogue Center.
-
-**Source.** LPC designation reports [LP-2491](https://s-media.nyc.gov/agencies/lpc/lp/2491.pdf) (East
-Village/Lower East Side Historic District: the "symbolic end" quote, Yorkville, the 784 congregants,
-St. Mark's later use) and [LP-2475](https://s-media.nyc.gov/agencies/lpc/lp/2475.pdf) (the same quote);
-the New-York Tribune's front page of June 16, 1904 in Chronicling America
-(`https://www.loc.gov/resource/sn83030214/1904-06-16/ed-1/?sp=1`).
-
-**Agent** (241 s, 2 rounds, 7 researchers; 62 claims with 81 links; the first draft cited 2 URLs no tool
-had returned, fixed in the revision) [full answer](samples/1-little-germany.md):
-
-> On June 15, 1904, the chartered steamboat *General Slocum* caught fire on the East River, killing more
-> than 1,000 local residents, including 784 members of St. Mark's Evangelical Lutheran Church ([LPC
-> Designation Report LP-2491, 2012](https://s-media.nyc.gov/agencies/lpc/lp/2491.pdf)). [...] This event
-> hastened the exodus of German residents from the Lower East Side to Yorkville and other areas [...]
-> In 1940, the St. Mark's Evangelical Lutheran Church congregation sold its building at 323 East 6th
-> Street to the Community Synagogue Center [...]
-
-It also covers what came after across all five eras: Eastern European Jewish, Polish, Hungarian and
-Ukrainian churches and residents, later Black and Puerto Rican residents, and the German buildings that
-survive, each fact linked to a landmark report, a 1904 newspaper page or an NYT article.
-
-**Same model, no tools** [full answer](samples/1-little-germany.md#2-gemini-35-flash-no-tools-no-system-prompt):
-
-> It was also the definitive death blow to **Kleindeutschland** [...] Within just a few years of the
-> tragedy, the neighborhood virtually vanished. [...] By 1905, just one year after the disaster, the
-> German population of the East Village had dwindled to a fraction of its former size.
-
-**Difference.** The model knows the story and gets the date, St. Mark's and Yorkville right, but with no
-sources, and it overstates: the landmark report calls the fire the *symbolic* end of a community that was
-already moving uptown, not a blow that emptied the neighborhood within a year. The agent's version matches
-the record and links each fact to it.
+- **Expected:** the 1904 *General Slocum* fire killed over 1,000 residents, 784 of them from St. Mark's
+  Lutheran Church. It was the "symbolic end" of a community already moving uptown to Yorkville; St.
+  Mark's later became a synagogue. Source: LPC report [LP-2491](https://s-media.nyc.gov/agencies/lpc/lp/2491.pdf).
+- **Agent** (241 s, 7 researchers, 81 links): matches on every point, each linked to the landmark report,
+  a 1904 newspaper page or the NYT, and follows the neighborhood through all five eras.
+  [Full answer](samples/1-little-germany.md)
+- **No tools:** "Within just a few years of the tragedy, the neighborhood virtually vanished."
+- **Difference:** the model gets the date and names right but overstates the fire's effect, with no
+  sources. The agent matches the record.
 
 ### 2. "What did the Lower East Side's pushcart markets look like around 1910?"
 
-**Expected answer.** Carts lined both sides of the market streets, so only a small wagon could pass; the
-shoppers were mostly women buying fish, fowl, fruit, vegetables and challah for the Sabbath on Thursday
-evening and Friday morning; barrels of salt herring; boys and peddlers shouting their wares in Yiddish.
-Carts stood in place about twelve hours a day, piled with everything "from a shoestring to a top hat".
-
-**Source.** Chronicling America (loc.gov): The Evening World, April 14, 1905, p. 19
-(`https://www.loc.gov/resource/sn83030193/1905-04-14/ed-1/?sp=19`), and The Sun, April 12, 1908, p. 32
-(`https://www.loc.gov/resource/sn83030272/1908-04-12/ed-1/?sp=32`). NYPL Digital Collections has a 1905
-photograph, "Hester Street, New York".
-
-**Agent** (189 s, 1 round, 1 researcher: one era and one question type, so the Lead sent one; 16 claims
-with 17 links, no problems) [full answer](samples/2-pushcart-markets.md):
-
-> Carts stood packed two or three tiers deep on both sides of the roadway, and occasionally stood directly
-> in the middle of Hester Street ([The Sun, 1904](https://www.loc.gov/resource/sn83030272/1904-07-26/ed-1/?sp=10)).
-> This density blocked the streets so severely that only small-sized wagons could pass [...] Shoppers were
-> overwhelmingly female, particularly on Friday mornings as women prepared for the Sabbath by purchasing
-> fish, fowl, fruits, vegetables, and challah Sabbath loaves ([The Evening World, 1905](https://www.loc.gov/resource/sn83030193/1905-04-14/ed-1/?sp=19)).
-> Goods displayed on the pushcarts [...] included eggs, cranberries, kneepants, coffee, wine glasses,
-> pickled tomatoes, underwear, and barrels of salt herring [...]
-
-**Same model, no tools** [full answer](samples/2-pushcart-markets.md#2-gemini-35-flash-no-tools-no-system-prompt):
-
-> These were heavy, two-wheeled wooden carts, often rented from local stables for about 10 to 25 cents a
-> day. [...] Peddlers [...] barked, sang, and yelled in a mix of Yiddish, Italian, and heavily accented
-> English. *"Hees! Hees! (Herring!)"* or *"A penny a plate!"* rose above the din.
-
-**Difference.** The model writes a vivid scene, but every detail is unsourced and some can't be checked
-(the rental price, the quoted cries; the 1905 reporter records the cry *"Veiber!"*, Yiddish for
-"women!"). The agent's scene is plainer, but each detail comes from a reporter who was there, and its
-"What the records don't show" section says what the pages don't cover (unlicensed vendors, what happened
-after 1920).
+- **Expected:** carts lining both sides of the street, women shopping for the Sabbath, barrels of
+  herring, peddlers calling in Yiddish. Source: The Evening World, April 14, 1905
+  ([page](https://www.loc.gov/resource/sn83030193/1905-04-14/ed-1/?sp=19)), and The Sun, April 12, 1908.
+- **Agent** (189 s, 1 researcher, 17 links): "Shoppers were overwhelmingly female, particularly on Friday
+  mornings as women prepared for the Sabbath by purchasing fish, fowl, fruits, vegetables, and challah"
+  ([The Evening World, 1905](https://www.loc.gov/resource/sn83030193/1905-04-14/ed-1/?sp=19)).
+  [Full answer](samples/2-pushcart-markets.md)
+- **No tools:** a vivid scene with cart rental prices and quoted cries ("Hees! Hees!") that no source
+  supports.
+- **Difference:** the agent's scene is plainer, but every detail comes from a reporter who was there.
 
 ### 3. "How did Brighton Beach become 'Little Odessa'?"
 
-**Expected answer.** Through immigration from the Soviet Union, above all Ukraine. Ukraine and Russia are
-the two largest foreign birthplaces: in 2000, 6,284 Ukraine-born (28.1%) and 4,420 Russia-born (19.7%) of
-22,391 foreign-born residents; in 2020-2024, Ukraine 4,853 (24.3%), Russia 2,853 (14.3%), and a newer group
-from Uzbekistan, 1,824 (9.1%), of 19,991.
-
-**Source.** Census API, place of birth of the foreign-born, summed over Brighton Beach's tracts (NTA
-BK1303): 2000 SF3 table PCT019
-(`https://api.census.gov/data/2000/dec/sf3?get=group(PCT019)&for=tract:036001,036002,036200,036400,036600,061002,061001&in=state:36%20county:047`)
-and ACS 2020-2024 table B05006
-(`https://api.census.gov/data/2024/acs/acs5?get=group(B05006)&for=tract:036001,036002,036200,036400,036600,061002,061003,061004&in=state:36%20county:047`).
-
-**Agent** (467 s, 3 rounds, 8 researchers; 52 claims with 57 links; 2 claims still failing after the
-revision, marked "(unverified)") [full answer](samples/3-little-odessa.md):
-
-> Brighton Beach became known as "Little Odessa" due to a major wave of immigration starting in the
-> mid-1970s and 1980s, when Soviet emigres—particularly Jewish families from Ukraine and other Soviet
-> republics—settled in large numbers in the neighborhood ([The New York Times, 1985](https://www.nytimes.com/1985/11/03/magazine/old-country-pleasures-brooklyn-s-borscht-belt.html)).
-> [...] Ukraine is the largest single foreign birthplace group with 4,853 people (24.3%), followed by
-> Russia with 2,853 (14.3%) [...]
-
-It also traces the place before the Soviet wave (a summer resort around 1900-1920, from Chronicling America
-ads and articles). It gives the 2020-2024 census figures but not the 2000 ones.
-
-**Same model, no tools** [full answer](samples/3-little-odessa.md#2-gemini-35-flash-no-tools-no-system-prompt):
-
-> Brighton Beach [...] became known as **"Little Odessa"** due to a massive influx of Soviet
-> immigrants—specifically Soviet Jews—beginning in the 1970s. [...] In recent years, a new wave of
-> immigrants from Central Asian countries (such as Uzbekistan, Kyrgyzstan, and Tajikistan) has arrived
-
-**Difference.** The model already knows this story well, including the newer Central Asian arrivals. The
-agent adds what the model can't: the numbers (Ukraine-born still the largest group, Uzbekistan now third)
-and a dated, linked source for each step. This is the query where the model's own knowledge is closest
-to the agent's.
+- **Expected:** Soviet immigration, above all from Ukraine. Ukraine-born residents are the largest
+  foreign-born group: 28.1% in 2000, 24.3% in 2020–2024, with Russia second and Uzbekistan now third.
+  Source: census birthplace tables for
+  [2000](https://data.census.gov/table/DECENNIALSF32000.PCT019?g=1400000US36047036001,36047036002,36047036200,36047036400,36047036600,36047061002,36047061001)
+  and [2020–2024](https://data.census.gov/table/ACSDT5Y2024.B05006?g=1400000US36047036001,36047036002,36047036200,36047036400,36047036600,36047061002,36047061003,36047061004).
+- **Agent** (467 s, 8 researchers, 57 links; 2 claims marked "(unverified)"): the 1970s–80s Soviet wave
+  (NYT, 1985) and today's figures, Ukraine 24.3% and Russia 14.3%. [Full answer](samples/3-little-odessa.md)
+- **No tools:** the same story, including recent Central Asian arrivals, but no numbers or sources.
+- **Difference:** the closest pair; the agent adds the figures and a dated source for each step.
 
 The page's example buttons are listed under [Example queries](#example-queries).
 
@@ -210,6 +135,10 @@ question ─► CLARIFIER ─► which neighborhood? which question types and er
 | Lead | Plans era × question type, sends Researchers (all in one turn so they run in parallel), saves a timeline, and sends more Researchers for gaps | `save_plan`, `research`, `save_timeline` |
 | Researcher (clones "Researcher 1", "Researcher 2", …) | One task, one era, in a fresh context: searches, reads the most relevant pages, and replies with cited bullets | the research tools below |
 | Writer | Writes the report from the question, timeline and findings only | none |
+
+Before the Lead starts, code fetches the neighborhood's census birthplace figures for 2000 and today
+and adds them to the findings (the "Census desk" on the page), so every run's settlement table rests on
+the same numbers; what the Researchers find in the archives still varies from run to run.
 
 Caps are enforced in code, not just asked for in prompts: at most 10 Researchers and 3 rounds per run
 (`research` disappears from the Lead's tools when they run out), at most 5 page/report reads and
