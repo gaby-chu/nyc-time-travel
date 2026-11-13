@@ -14,55 +14,26 @@ It is built on FastAPI + the OpenAI Agents SDK + LiteLLM + Gemini on Vertex AI (
 Open https://nyc-time-travel-git-484339235648.europe-west1.run.app/ in a browser.
 
 - Type a question, or click one of the example questions under the box.
-- Name the neighborhood any way you like: official names ("Sunset Park"), informal ones ("Koreatown",
-  "Little Germany"), or ones that mean several places ("Chinatown", "Little Italy"). If the name is
-  ambiguous or the question is vague, the agent asks which you mean: click an option.
-- The finished report goes to press as the front page: the overview as the lead story, with a lead
-  picture. Below it is a timeline of the eras (Then & now), each in the style of its day. Then come the
-  settlement table (Who settled, and when; "The Record"), what remains ("Still Standing") and what the
-  records don't show ("Corrections & Omissions"). Every fact ends with a link to its source.
-
-### Example queries
-
-The five buttons on the page:
-
-- "How did Jackson Heights become one of the most diverse neighborhoods in the city?"
-- "How did downtown Flushing become a Chinatown?"
-- "How did Little Haiti in Flatbush grow?" (an informal name: the agent places it in Flatbush)
-- "Who has called Sunset Park home over the last century?" (Sunset Park is three official
-  neighborhoods: the agent asks which)
-- "Take me to an immigrant neighborhood I've never heard of" (vague: the agent suggests neighborhoods to
-  pick from)
-
-More to try, one for each question type and for the clarifier:
-
-- Then & now: "What did the Lower East Side look like in 1910 vs. 1940 vs. today?"
-- Who settled, and when: "Which immigrant groups settled in Astoria, and when?"
-- What remains: "What traces of Little Germany are left in the East Village?"
-- All three: "Tell me the story of Arthur Avenue"
-- Ambiguous: "Tell me the story of Chinatown" (Manhattan, Sunset Park or Flushing?)
-- Out of scope: "How have rents changed in Bushwick since 2010?"
+- Name the neighborhood any way you like: official names ("Sunset Park"), informal ones ("Koreatown", "Little Germany"), or ones that mean several places ("Chinatown", "Little Italy"). If the name is ambiguous or the question is vague, the agent will ask a follow up question, and you can click an option.
+- The finished report goes to press as the front page: the overview as the lead story, with a lead picture. Below it is a timeline of the eras (Then & now). After that comes the settlement table (Who settled, and when; "The Record"), what remains ("Still Standing") and what the records don't show ("Corrections & Omissions"). Every fact ends with a link to its source.
 
 ## Data: sources, how to load it, and limits
 
-There is no big downloaded dataset. One small file is in the repo; everything else is fetched live from
-public APIs when someone asks a question, and the report links to each record it used.
+There are several datasets in use; one small file is in the repo, and everything else is accessed through public APIs when someone asks a question, and the report links to each record it used.
 
 **In the repo: `data/ntas.json` (2.6 MB).** NYC's 262 official neighborhoods (2020 Neighborhood
 Tabulation Areas, NTAs), each with its code, name, borough, county, type (neighborhood, park, cemetery,
 airport…), the 2020 census tracts inside it, a bounding box and its boundary polygons. The Clarifier
-uses it to match names and to check that an address falls inside a neighborhood, and census figures
-are summed over its tracts. It's built from two NYC Open Data datasets (Department of City Planning):
+uses it to match names and to check that an address falls inside a neighborhood. It's built from two NYC Open Data datasets (Department of City Planning):
 
 - 2020 NTAs with boundaries: <https://data.cityofnewyork.us/resource/9nt8-h7nd.json>
 - 2020 census tract to NTA equivalency: <https://data.cityofnewyork.us/resource/hm78-6dwm.json>
 
-To load it: it's plain JSON keyed by NTA code (`json.load(open("data/ntas.json"))["BK0702"]`). To
-rebuild it from the source: `uv run geo.py build` (no key needed).
+To load it: it's plain JSON keyed by NTA code (`json.load(open("data/ntas.json"))["BK0702"]`). To rebuild it from the source: `uv run geo.py build`.
 
-**Fetched live, per question.** Each can be tried in a browser or with `curl`:
+**Fetched through APIs, done when question is called.** Each can be tried in a browser or with `curl`:
 
-| Source | What we use | How to load it | Key |
+| Source | What part is used | How to load it | Key |
 | --- | --- | --- | --- |
 | US Census Bureau API | 2000 Census SF3 (tables PCT018 ancestry, PCT019 birthplace) and ACS 5-year 2010–2024 (B04006 ancestry, B05006 birthplace, B16001/C16001 language), by tract | `https://api.census.gov/data/2024/acs/acs5?get=group(B05006)&for=tract:*&in=state:36%20county:047&key=YOUR_KEY`; or browse the same tables at data.census.gov | Free: [sign up](https://api.census.gov/data/key_signup.html) |
 | Library of Congress, Chronicling America | Digitized NYC newspaper pages, 1900–1954: search hits, OCR text, page scans | `https://www.loc.gov/collections/chronicling-america/?q=hester+street&dates=1900/1910&fa=location_state:new+york\|location_city:new+york&fo=json` | None |
@@ -72,41 +43,26 @@ rebuild it from the source: `uv run geo.py build` (no key needed).
 | NYC Municipal Archives | ~1940 and ~1985 tax photos, found by borough, block and lot | `https://nycrecords.access.preservica.com/?s=nynyma_rec0040_1_00414_0056` (~1940; `REC0041_…` for ~1985) | None |
 | NYC GeoSearch (helper) | Street address to coordinates and borough-block-lot | `https://geosearch.planninglabs.nyc/v2/search?text=97+Orchard+Street+Manhattan` | None |
 
-We link to records and show the archives' own thumbnails and page scans; we don't copy or store them.
-Results are cached in memory for the life of the server only.
-
 ### Limits
 
-- **Old newspapers stop in 1954.** Chronicling America only has public-domain papers. For NYC that's
-  rich before 1923 (the Tribune, the Sun, the Evening World) and thin through the 1940s (some Yiddish
-  dailies, the Daily Worker). We checked: 208 NYC pages in 1953–54, none from 1955 on. For 1960, 1980 and
-  today the newspaper source is the NYT.
-- **The NYT search returns headlines, abstracts and snippets, not full text,** and many old articles have
-  only a headline. Its place tags exist only from 1981. The API allows about 500 requests a day, and a run
-  makes about 15–30, so heavy use runs out of quota.
+- **Chronicling America data stop in 1954.** Chronicling America only has public-domain papers. For NYC that's rich before 1923 (the Tribune, the Sun, the Evening World) and thin through the 1940s (some Yiddish dailies, the Daily Worker). For 1960, 1980 and today the newspaper source is the NYT.
+- **The NYT search returns headlines, abstracts and snippets, not full text,** Many old articles have
+  only a headline. Its place tags exist only from 1981. The API allows about 500 requests a day, so heavy use runs out of quota quickly.
 - **Census numbers start in 2000.** The 1990 long form isn't in the Census API, and the 2010 census didn't
   ask about ancestry, birthplace or language. Tract boundaries change between decades, so older totals
-  for today's neighborhoods are approximate (the report says how well the tracts matched). ACS estimates
-  for small groups have large margins of error and are flagged. Census categories don't map neatly onto
-  how communities identify themselves: e.g. the ancestry table has no separate entry for most Asian and
-  Hispanic origins, so we use birthplace for those.
+  for today's neighborhoods are approximate.
 - **Neighborhoods are 2020 NTAs.** A historic neighborhood like Koreatown is a few blocks of a larger NTA
   (Midtown South), so its census figures cover the whole NTA; the report says so.
-- **NYPL's openly available material skews old**, and coverage of any one block is hit or miss.
-- **Landmark records only cover designated buildings and historic districts.** One district's report
-  (East Village/Lower East Side, LP-02491) is missing from the city's dataset; we link it by hand.
+- **NYPL's openly available material skews old** In addition, coverage of any one block is hit or miss.
 - **Coverage varies a lot by neighborhood**, and the ~1960 era is thin almost everywhere. Thinly
-  documented places get thinner answers, by design.
-- **Historic sources reflect the biases of their time.** The agent reports what they show in neutral
-  terms and quotes offensive wording only where it's itself the evidence.
+  documented places get thinner answers by design.
 - **The time limits trade some depth for speed.** A loc.gov newspaper search takes about 30 seconds,
-  and NYT requests are spaced 12 seconds apart on one shared key (the NYT's recommended pause), so a run
-  gets about 14 NYT searches. So that every answer arrives within 5
+  and NYT requests are spaced 12 seconds apart (the NYT's recommended pause), so a run gets about 14 NYT searches. So that every answer arrives within 5
   minutes, research stops 170 seconds into a run, each researcher gets at most 90 seconds before it
   reports what it has, and the citation revision runs only if it still fits (otherwise failing claims
-  are marked "(unverified)" straight away). A test run took 236 seconds. On a day the archives are slow,
-  researchers find less. The NYT key also has a daily request limit: once it's used up, researchers
+  are marked "(unverified)" straight away). The NYT key also has a daily request limit: once it's used up, researchers
   skip the NYT until it resets, and the reports lean on the other sources.
+  
 
 ## Sample queries
 
@@ -279,51 +235,6 @@ Helpers, not sources: NYC GeoSearch (addresses) and the 2020 NTA boundaries and 
 `loc.py`, `nyt.py`, `nypl.py`, `lpc.py`, `geo.py`), each with a smoke test you can run with
 `uv run <module>.py`. Tools return errors to the model as text instead of crashing.
 
-### `/chat` API
-
-`POST /chat` keeps the response shape of our Project 1 agent:
-
-```jsonc
-// request
-{"message": "Tell me the story of Chinatown", "session_id": null}
-// response
-{"response": "Which Chinatown would you like to explore?\n- Chinatown-Two Bridges, Manhattan\n- ...",
- "session_id": "1c1b3dd1-...",
- "tool_calls": [{"agent": "Clarifier", "name": "neighborhood_at",
-                 "args": {"address": "70 Mott Street, Manhattan"}, "result": "MN0301: Chinatown-Two Bridges, ..."}]}
-```
-
-`response` is the report markdown, or a clarifying question with one `- option` line per option. Send
-the chosen option as the next `message` with the same `session_id`. `tool_calls` holds every tool call
-from every agent, each tagged with its `agent` ("Clarifier", "Lead", "Researcher 3", …). The page itself
-uses `GET /run`, which streams the same run as Server-Sent Events.
-
-## Run it locally
-
-1. A GCP project with billing and the Vertex AI API enabled, then `gcloud auth application-default login`.
-2. A `.env` file in this folder (it's in `.gitignore`) with:
-
-   ```bash
-   CENSUS_API_KEY=...      # https://api.census.gov/data/key_signup.html (activate it from the email)
-   NYT_API_KEY=...         # https://developer.nytimes.com, with the Article Search API enabled
-   NYPL_API_KEY=...        # https://api.repo.nypl.org/sign_up
-   VERTEXAI_PROJECT=...    # your GCP project ID
-   ```
-
-3. `uv run app.py`, then open <http://localhost:8000>.
-
-The server listens on the port in the `PORT` environment variable (8000 if unset), which is how Cloud Run
-runs it.
-
-## Deploying
-
-Same as Project 1: Cloud Run continuous deployment from this GitHub repo, built by Google's buildpacks
-from `pyproject.toml` and `uv.lock` (no Dockerfile), region `europe-west1`. On the service:
-
-- the four `.env` values as environment variables, with the three API keys stored in Secret Manager;
-- the service account has the Vertex AI User role;
-- request timeout raised to 900 s (the default 300 s cuts off a full run);
-- max instances 1, because the context panel and pending clarifications are kept in memory.
 
 ## Team
 
