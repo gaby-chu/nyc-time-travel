@@ -7,8 +7,6 @@ It searches historical newspapers, the New York Times archive, the New York Publ
 collections, NYC landmark designation reports and the census, and writes a report where every fact
 links to the record it came from. Where the records are thin, it says so.
 
-It's for New Yorkers, students, history fans, and anyone curious about the place they live.
-
 Built on the course's `wikipedia-deep-research` scaffold: FastAPI + the OpenAI Agents SDK + LiteLLM +
 Gemini on Vertex AI (`vertex_ai/gemini-3.5-flash` for the Clarifier, Lead and Writer;
 `vertex_ai/gemini-3.5-flash-lite` for the Researchers).
@@ -191,7 +189,7 @@ question ─► CLARIFIER ─► which neighborhood? which question types and er
 
 Caps are enforced in code, not just asked for in prompts: at most 10 Researchers and 3 rounds per run
 (`research` disappears from the Lead's tools when they run out), at most 5 page/report reads and
-3 searches of each slow archive per Researcher.
+3 searches of each slow archive and 90 seconds per Researcher.
 
 The citation check is code, not a model ([checker.py](checker.py)). We built an LLM Checker that
 judged each claim against its source, and dropped it: on our test runs it flagged many correct claims
@@ -243,7 +241,7 @@ Italy in Manhattan, and when?"), the Lead called `research` five times in one tu
 all started at 13.5 s, one per era (1900–1920, 1940, 1960, 1980, today), and ran at the same time: the
 first finished at 23.9 s and the last at 353.4 s. Each is a clone of the Researcher run with its own
 `Runner.run`, so each starts from an empty context with only its task. To watch this live, open the
-context panel during a run: each Researcher gets its own column, all starting on the Lead's turn.
+Newsroom during a run: each Researcher gets its own notebook, and they all open on the Lead's turn.
 
 **The Lead goes back for gaps.** In the same question's earlier run, round 1 found no population
 figures for 1940 or 1960. The Lead saved a timeline, then sent Researcher 6 with a gap task ("population
