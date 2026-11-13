@@ -22,8 +22,60 @@ Open https://nyc-time-travel-git-484339235648.europe-west1.run.app/ in a browser
   settlement table (Who settled, and when; "The Record"), what remains ("Still Standing") and what the
   records don't show ("Corrections & Omissions"). Every fact ends with a link to its source.
 
+### Example queries
+
+The five buttons on the page:
+
+- "How did Jackson Heights become one of the most diverse neighborhoods in the city?"
+- "How did downtown Flushing become a Chinatown?"
+- "How did Little Haiti in Flatbush grow?" (an informal name: the agent places it in Flatbush)
+- "Who has called Sunset Park home over the last century?" (Sunset Park is three official
+  neighborhoods: the agent asks which)
+- "Take me to an immigrant neighborhood I've never heard of" (vague: the agent suggests neighborhoods to
+  pick from)
+
+More to try, one for each question type and for the clarifier:
+
+- Then & now: "What did the Lower East Side look like in 1910 vs. 1940 vs. today?"
+- Who settled, and when: "Which immigrant groups settled in Astoria, and when?"
+- What remains: "What traces of Little Germany are left in the East Village?"
+- All three: "Tell me the story of Arthur Avenue"
+- Ambiguous: "Tell me the story of Chinatown" (Manhattan, Sunset Park or Flushing?)
+- Out of scope: "How have rents changed in Bushwick since 2010?"
 
 ## Data: sources, how to load it, and limits
+
+There is no big downloaded dataset. One small file is in the repo; everything else is fetched live from
+public APIs when someone asks a question, and the report links to each record it used.
+
+**In the repo: `data/ntas.json` (2.6 MB).** NYC's 262 official neighborhoods (2020 Neighborhood
+Tabulation Areas, NTAs), each with its code, name, borough, county, type (neighborhood, park, cemetery,
+airport…), the 2020 census tracts inside it, a bounding box and its boundary polygons. The Clarifier
+uses it to match names and to check that an address falls inside a neighborhood, and census figures
+are summed over its tracts. It's built from two NYC Open Data datasets (Department of City Planning):
+
+- 2020 NTAs with boundaries: <https://data.cityofnewyork.us/resource/9nt8-h7nd.json>
+- 2020 census tract to NTA equivalency: <https://data.cityofnewyork.us/resource/hm78-6dwm.json>
+
+To load it: it's plain JSON keyed by NTA code (`json.load(open("data/ntas.json"))["BK0702"]`). To
+rebuild it from the source: `uv run geo.py build` (no key needed).
+
+**Fetched live, per question.** Each can be tried in a browser or with `curl`:
+
+| Source | What we use | How to load it | Key |
+| --- | --- | --- | --- |
+| US Census Bureau API | 2000 Census SF3 (tables PCT018 ancestry, PCT019 birthplace) and ACS 5-year 2010–2024 (B04006 ancestry, B05006 birthplace, B16001/C16001 language), by tract | `https://api.census.gov/data/2024/acs/acs5?get=group(B05006)&for=tract:*&in=state:36%20county:047&key=YOUR_KEY`; or browse the same tables at data.census.gov | Free: [sign up](https://api.census.gov/data/key_signup.html) |
+| Library of Congress, Chronicling America | Digitized NYC newspaper pages, 1900–1954: search hits, OCR text, page scans | `https://www.loc.gov/collections/chronicling-america/?q=hester+street&dates=1900/1910&fa=location_state:new+york\|location_city:new+york&fo=json` | None |
+| New York Times Article Search API | Headlines, abstracts, dates and links, 1851–today | `https://api.nytimes.com/svc/search/v2/articlesearch.json?q=sunset+park&begin_date=19800101&end_date=19891231&api-key=YOUR_KEY` | Free: [developer.nytimes.com](https://developer.nytimes.com) |
+| NYPL Digital Collections API | Public-domain photos, maps and prints: titles, dates, places, thumbnails | `https://api.repo.nypl.org/api/v2/items/search?q=orchard+street` with the header `Authorization: Token token="YOUR_KEY"` | Free: [sign up](https://api.repo.nypl.org/sign_up) |
+| NYC Landmarks Preservation Commission (NYC Open Data) | Individual landmarks (`buis-pvji`), the building database (`gpmc-yuvp`), historic districts (`skyk-mpzq`), and designation report PDFs | `https://data.cityofnewyork.us/resource/gpmc-yuvp.json?$limit=5`; reports at `https://s-media.nyc.gov/agencies/lpc/lp/2622.pdf` | None |
+| NYC Municipal Archives | ~1940 and ~1985 tax photos, found by borough, block and lot | `https://nycrecords.access.preservica.com/?s=nynyma_rec0040_1_00414_0056` (~1940; `REC0041_…` for ~1985) | None |
+| NYC GeoSearch (helper) | Street address to coordinates and borough-block-lot | `https://geosearch.planninglabs.nyc/v2/search?text=97+Orchard+Street+Manhattan` | None |
+
+We link to records and show the archives' own thumbnails and page scans; we don't copy or store them.
+Results are cached in memory for the life of the server only.
+
+### Limits
 
 - **Old newspapers stop in 1954.** Chronicling America only has public-domain papers. For NYC that's
   rich before 1923 (the Tribune, the Sun, the Evening World) and thin through the 1940s (some Yiddish
@@ -174,10 +226,7 @@ agent adds what the model can't: the numbers (Ukraine-born still the largest gro
 and a dated, linked source for each step. This is the query where the model's own knowledge is closest
 to the agent's.
 
-The page's example buttons ask about neighborhoods where immigrant communities are thriving today. Three
-of them are the samples above; the other two are "How did downtown Flushing become a Chinatown?" and a
-vague one, "Take me to an immigrant neighborhood I've never heard of" (the agent suggests neighborhoods to
-pick from).
+The page's example buttons are listed under [Example queries](#example-queries).
 
 ## How it works
 
@@ -225,10 +274,10 @@ judged each claim against its source, and dropped it: on our test runs it flagge
 | `read_landmark_report` | A designation report's text around the search words, with page numbers | LPC designation report PDFs |
 | `tax_photo_links` | The Municipal Archives' ~1940 and ~1985 tax photos of one building: a link to each photo, shown in the era that cites it | NYC GeoSearch + NYC Municipal Archives |
 
-Helpers, not sources: NYC GeoSearch (addresses), the 2020 NTA boundaries and tract equivalencies from NYC
-Open Data (built once into `data/ntas.json` by `uv run geo.py build`). The tools are in their own modules
-(`census.py`, `loc.py`, `nyt.py`, `nypl.py`, `lpc.py`, `geo.py`), each with a smoke test you can run
-with `uv run <module>.py`. Tools return errors to the model as text instead of crashing.
+Helpers, not sources: NYC GeoSearch (addresses) and the 2020 NTA boundaries and tract lists (see
+[Data](#data-sources-how-to-load-it-and-limits)). The tools are in their own modules (`census.py`,
+`loc.py`, `nyt.py`, `nypl.py`, `lpc.py`, `geo.py`), each with a smoke test you can run with
+`uv run <module>.py`. Tools return errors to the model as text instead of crashing.
 
 ### `/chat` API
 
@@ -238,7 +287,7 @@ with `uv run <module>.py`. Tools return errors to the model as text instead of c
 // request
 {"message": "Tell me the story of Chinatown", "session_id": null}
 // response
-{"response": "Which Chinatown would you like to explore?\n- Chinatown-Two Bridges, Manhattan (MN0301)\n- ...",
+{"response": "Which Chinatown would you like to explore?\n- Chinatown-Two Bridges, Manhattan\n- ...",
  "session_id": "1c1b3dd1-...",
  "tool_calls": [{"agent": "Clarifier", "name": "neighborhood_at",
                  "args": {"address": "70 Mott Street, Manhattan"}, "result": "MN0301: Chinatown-Two Bridges, ..."}]}
@@ -248,8 +297,6 @@ with `uv run <module>.py`. Tools return errors to the model as text instead of c
 the chosen option as the next `message` with the same `session_id`. `tool_calls` holds every tool call
 from every agent, each tagged with its `agent` ("Clarifier", "Lead", "Researcher 3", …). The page itself
 uses `GET /run`, which streams the same run as Server-Sent Events.
-
-
 
 ## Run it locally
 

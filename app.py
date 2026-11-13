@@ -8,6 +8,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import httpx
 import uvicorn
 from agents import Agent, ModelSettings, RunContextWrapper, Runner, function_tool, set_tracing_disabled
 from agents.exceptions import MaxTurnsExceeded, ModelBehaviorError
@@ -163,9 +164,36 @@ def error_text(e: Exception, limit: int = 300) -> str:
     return f"{type(e).__name__}: {redact(str(e))[:limit]}"
 
 
+def plain_error(e: Exception) -> str:
+    """What went wrong, in a sentence the model can act on: no URLs, stack details or keys."""
+    if isinstance(e, httpx.HTTPStatusError):
+        code = e.response.status_code
+        if code == 429:
+            return "the source is getting too many requests right now. Use another source."
+        if code in (401, 403):
+            return "the source refused the request (access denied). Use another source."
+        if code == 404:
+            return "that page or item doesn't exist. Check the link came from a search result."
+        if code >= 500:
+            return f"the source is having trouble (error {code}). Try once more later, or use another source."
+        return f"the source rejected the request (error {code}). Check the arguments."
+    if isinstance(e, httpx.TimeoutException):
+        return "the source didn't answer in time. Use another source or other search words."
+    if isinstance(e, httpx.TransportError):
+        return "couldn't reach the source. Use another source."
+    if isinstance(e, (KeyError, IndexError)):
+        return "the source's answer wasn't in the expected shape. Use another source."
+    if isinstance(e, json.JSONDecodeError):
+        return "the source sent back something that isn't data (it may be down). Use another source."
+    if isinstance(e, (TimeoutError, LookupError, ValueError, RuntimeError)):
+        # Our own messages (out of time, NYT quota, no such address, bad year): already plain
+        return redact(str(e))[:300]
+    return f"something went wrong ({type(e).__name__}). Use another source."
+
+
 def failed(what: str, e: Exception) -> str:
     # The model cannot see an exception. Return something it can reason about.
-    return json.dumps({"error": f"{what}: {error_text(e)}"})
+    return json.dumps({"error": f"{what} failed: {plain_error(e)}"})
 
 
 def out_of_time(ctx: RunContextWrapper[Research]) -> str | None:
@@ -239,7 +267,9 @@ def without_years(query: str) -> tuple[str, str]:
 @function_tool(failure_error_function=tool_error)
 def census_profile(ctx: RunContextWrapper[Research], nta_code: str, year: int, topic: str) -> str:
     """Census figures for one neighborhood and year: the largest groups, with margins of error.
-    Only 2000 and 2010-2024 exist ('2024' is the ACS 2020-2024 average). Nothing before 2000.
+    Use it for numbers: who lives here today ('2024') and how that changed since 2000, for the
+    "today" era and the settlement table. Only 2000 and 2010-2024 exist ('2024' is the ACS 2020-2024
+    average). Nothing before 2000: for earlier eras, use the newspapers and landmark reports.
 
     Args:
         nta_code: The neighborhood's NTA code, e.g. 'MN0302'.
@@ -258,8 +288,9 @@ def census_profile(ctx: RunContextWrapper[Research], nta_code: str, year: int, t
 @function_tool(failure_error_function=tool_error)
 def search_old_newspapers(ctx: RunContextWrapper[Research], terms: str, start_year: int, end_year: int) -> str:
     """Search NYC newspaper pages in Chronicling America (Library of Congress), 1900 to 1954 only:
-    rich before 1923, thin after (some Yiddish dailies and the Daily Worker). Nothing from 1955 on:
-    use search_nyt. Returns up to 5 pages with a matched snippet. Each search takes about 30 seconds,
+    rich before 1923, thin after (some Yiddish dailies and the Daily Worker). Use it first for the
+    1900-1920 era, and for 1940: eyewitness descriptions of streets, markets, churches, societies and
+    events. Nothing from 1955 on: use search_nyt. Returns up to 5 pages with a matched snippet. Each search takes about 30 seconds,
     and you get 3 (MAX_SEARCHES): make each count.
 
     Args:
@@ -289,7 +320,8 @@ def search_old_newspapers(ctx: RunContextWrapper[Research], terms: str, start_ye
 @function_tool(failure_error_function=tool_error)
 def read_old_newspaper_page(ctx: RunContextWrapper[Research], url: str, terms: str) -> str:
     """Read the OCR text of one newspaper page from search_old_newspapers, around your terms.
-    The OCR is noisy. Counts toward your 5 reads.
+    Use it when a search snippet looks relevant: snippets are a line or two, and the page has the
+    details. The OCR is noisy. Counts toward your 5 reads.
 
     Args:
         url: The page's Source URL from search_old_newspapers.
@@ -306,9 +338,11 @@ def read_old_newspaper_page(ctx: RunContextWrapper[Research], url: str, terms: s
 @function_tool(failure_error_function=tool_error)
 def search_nyt(ctx: RunContextWrapper[Research], query: str, start_year: int, end_year: int,
                place: str | None = None) -> str:
-    """Search The New York Times archive (1851 to today). Returns up to 5 articles: headline, date,
-    abstract or snippet (many old articles have only a headline), and URL. Not the full text.
-    You get 3 searches (MAX_SEARCHES).
+    """Search The New York Times archive (1851 to today). Use it for the 1960, 1980 and today eras,
+    which have no old newspapers, and for when a group arrived or an institution opened or closed.
+    Returns up to 5 articles: headline, date, abstract or snippet (many old articles have only a
+    headline), and URL. Not the full text. You get 3 searches (MAX_SEARCHES), and they queue on a
+    shared key: make each count.
 
     Args:
         query: 2 to 4 words, e.g. 'Lower East Side Puerto Rican'. No years: a year in the query
@@ -342,8 +376,9 @@ def search_nyt(ctx: RunContextWrapper[Research], query: str, start_year: int, en
 @function_tool(failure_error_function=tool_error)
 def search_nypl(ctx: RunContextWrapper[Research], query: str, start_year: int | None = None,
                 end_year: int | None = None) -> str:
-    """Search the New York Public Library's public-domain photos, maps and prints. Returns up to 5
-    items with title, date, collection and a link to the item's page. Strongest before 1950.
+    """Search the New York Public Library's public-domain photos, maps and prints. Use it for what a
+    place looked like (Then & now), mostly before 1950: the page shows each photo or map the report
+    cites. Returns up to 5 items with title, date, collection and a link to the item's page.
 
     Args:
         query: A street or place name with its borough, e.g. 'Orchard Street Manhattan' or
@@ -370,7 +405,9 @@ def search_nypl(ctx: RunContextWrapper[Research], query: str, start_year: int | 
 @function_tool(failure_error_function=tool_error)
 def search_landmarks(ctx: RunContextWrapper[Research], nta_code: str, keyword: str | None = None) -> str:
     """The designated landmarks and historic-district buildings in a neighborhood: names, dates built,
-    original uses, notes, and links to designation reports. Only designated buildings are covered.
+    original uses, notes, and links to designation reports. Use it for What remains (which buildings
+    survive and who built them), and to find a report to read for any era. Only designated
+    buildings are covered.
 
     Args:
         nta_code: The neighborhood's NTA code, e.g. 'MN0302'.
@@ -387,8 +424,9 @@ def search_landmarks(ctx: RunContextWrapper[Research], nta_code: str, keyword: s
 @function_tool(failure_error_function=tool_error)
 def read_landmark_report(ctx: RunContextWrapper[Research], url: str, terms: str) -> str:
     """Read a Landmarks Preservation Commission designation report (a PDF) around your terms, with
-    page numbers. Reports often tell the history of who built and used a building. Counts toward
-    your 5 reads.
+    page numbers. Use it for the history of who built and used a building, and for settlement
+    history: historic-district reports often trace which groups lived in the area and when. Counts
+    toward your 5 reads.
 
     Args:
         url: A report link from search_landmarks, e.g. 'https://s-media.nyc.gov/agencies/lpc/lp/1440.pdf'.
@@ -405,7 +443,8 @@ def read_landmark_report(ctx: RunContextWrapper[Research], url: str, terms: str)
 @function_tool(failure_error_function=tool_error)
 def tax_photo_links(ctx: RunContextWrapper[Research], address: str) -> str:
     """The city's tax photos of one building, taken about 1940 and about 1985: a link to each photo
-    the archive has.
+    the archive has. Use it in the 1940 and 1980 eras for one or two addresses your other sources
+    name, to show what the street looked like: the page shows each photo the report cites.
 
     Args:
         address: A street address with house number and borough, e.g. '97 Orchard Street, Manhattan'.
@@ -457,7 +496,8 @@ class EraRow(BaseModel):
 
 @function_tool(failure_error_function=tool_error)
 def save_plan(ctx: RunContextWrapper[Research], rows: list[PlanRow]) -> str:
-    """Save your research plan: one row per question type and era worth researching.
+    """Save your research plan: one row per question type and era worth researching. Use it once,
+    before sending any researchers.
 
     Args:
         rows: The plan's rows.
@@ -468,8 +508,8 @@ def save_plan(ctx: RunContextWrapper[Research], rows: list[PlanRow]) -> str:
 
 @function_tool(failure_error_function=tool_error)
 def save_timeline(ctx: RunContextWrapper[Research], groups: list[GroupRow], eras: list[EraRow]) -> str:
-    """Save the timeline you've built from the findings, replacing any saved before. The writer
-    writes the report from it.
+    """Save the timeline you've built from the findings, replacing any saved before. Use it after each
+    round of research, before deciding whether to send more: the writer writes the report from it.
 
     Args:
         groups: For each group: when it arrived, peaked, and declined or moved, and the evidence.
@@ -561,19 +601,28 @@ Eras: {', '.join(ERAS)}.
 3. Not ready, so ask one short question and give options (2 to 5) the user can click, when:
    - no place is given ("Tell me about immigrants in NYC"): suggest neighborhoods;
    - the name fits more than one neighborhood, or the place spans several ("Little Italy",
-     "the Village", "Sunset Park"): give one option per neighborhood, written like
-     "Belmont, Bronx (BX0603)".
+     "the Village", "Sunset Park"): give one option per neighborhood, written as its official
+     name and borough, like "Belmont, Bronx". No NTA codes in the question or options: users
+     don't know them.
 4. Out of scope (set out_of_scope, explain why politely in question, and suggest in-scope
    questions as options): places outside the five boroughs; rents, business turnover, storefronts
    or displacement economics; genealogy or any specific private person.
 
 If you're given an earlier clarification and the user's answer, use the answer: a chosen option
-names the neighborhood.""",
+names the neighborhood. Look it up with resolve_neighborhood to get its NTA code.""",
     model=MODEL,
     model_settings=SETTINGS,
     tools=[resolve_neighborhood, neighborhood_at],
     output_type=Clarify,
 )
+
+
+NTA_CODE = re.compile(r"\s*\((?:MN|BX|BK|QN|SI)\d{4}\)|\b(?:MN|BX|BK|QN|SI)\d{4}\b:?\s*")
+
+
+def without_codes(text: str) -> str:
+    """Take NTA codes ("Belmont, Bronx (BX0603)") out of what the user sees: they mean nothing to users."""
+    return NTA_CODE.sub("", text).strip()
 
 
 def check_clarify(c: Clarify, state: Research) -> Clarify:
@@ -657,7 +706,8 @@ def research_left(ctx: RunContextWrapper[Research], agent) -> bool:
 @function_tool(is_enabled=research_left, failure_error_function=tool_error)
 async def research(ctx: RunContextWrapper[Research], task: str, era: str, question_type: str, hints: str) -> str:
     """Send a researcher to answer one task about the neighborhood in one era.
-    Returns its findings, each with its source link.
+    Returns its findings, each with its source link. Use it for each row of your plan, all in the
+    same turn so they run in parallel, and again for gaps the timeline shows.
 
     Args:
         task: One specific thing to find out.
@@ -853,8 +903,8 @@ async def deep_research(question: str, hooks: PanelHooks, asked: str | None = No
                 "options": []}, research_run
     c = check_clarify(clarified.final_output, research_run)
     if not c.ready:
-        return {"type": "clarify", "question": c.question or "Which neighborhood do you mean?",
-                "options": c.options, "out_of_scope": c.out_of_scope}, research_run
+        return {"type": "clarify", "question": without_codes(c.question or "Which neighborhood do you mean?"),
+                "options": [without_codes(o) for o in c.options], "out_of_scope": c.out_of_scope}, research_run
 
     research_run.nta, research_run.question_types, research_run.eras = geo.nta(c.nta_code), c.question_types, c.eras
     nta = research_run.nta
