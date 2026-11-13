@@ -1,0 +1,1728 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Neighborhood Time Machine</title>
+        <!-- Same markdown renderer and sanitizer as Project 1 (pam) -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+        <!-- A current newspaper's type (display serif, text serif, a sans for labels), plus one face per era
+             for the era articles -->
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@800;900&family=Newsreader:ital,opsz,wght@0,6..72,400..800;1,6..72,400..800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Inter:wght@400;500;600;700;800&family=UnifrakturMaguntia&family=Old+Standard+TT:ital,wght@0,400;0,700;1,400&family=Oswald:wght@500;700&family=Jost:wght@400;700&family=Anton&display=swap"
+            rel="stylesheet"
+        />
+        <style>
+            :root {
+                --paper: #ffffff;
+                --tint: #f6f5f1;
+                --ink: #121212;
+                --ink-soft: #5c5c5c;
+                --line: #e2e2e2;
+                --red: #c0282d;
+                --blue: #1f4e79;
+                --gold: #a8741a;
+                --serif: "Source Serif 4", Georgia, serif;
+                --headline: "Newsreader", Georgia, serif;
+                --sans: "Inter", Helvetica, Arial, sans-serif;
+            }
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+            html {
+                scroll-behavior: smooth;
+                scroll-padding-top: 1rem;
+            }
+            body {
+                font-family: var(--serif);
+                color: var(--ink);
+                background: var(--paper);
+                padding: 0 1rem 4rem;
+            }
+            main {
+                max-width: 1160px;
+                margin: 0 auto;
+            }
+            a {
+                color: inherit;
+            }
+            p {
+                line-height: 1.6;
+            }
+            button {
+                font: inherit;
+                cursor: pointer;
+            }
+            button:disabled {
+                opacity: 0.35;
+                cursor: default;
+            }
+            [hidden] {
+                display: none !important;
+            }
+
+            /* --- The masthead: date bar, nameplate, section links --- */
+            .topbar {
+                display: flex;
+                justify-content: space-between;
+                gap: 1rem;
+                font-family: var(--sans);
+                font-size: 0.75rem;
+                color: var(--ink-soft);
+                padding: 0.7rem 0;
+            }
+            .topbar b {
+                color: var(--ink);
+                font-weight: 600;
+            }
+            /* A blackletter nameplate, as the big American dailies use */
+            .nameplate {
+                font-family: "UnifrakturMaguntia", Georgia, serif;
+                font-weight: 400;
+                font-size: clamp(2.2rem, 7vw, 4.8rem);
+                line-height: 1.05;
+                text-align: center;
+                margin: 0.2rem 0 0.15rem;
+            }
+            .motto {
+                text-align: center;
+                font-family: var(--headline);
+                font-style: italic;
+                font-size: 0.98rem;
+                color: var(--ink-soft);
+            }
+            nav.sections {
+                display: flex;
+                justify-content: center;
+                flex-wrap: wrap;
+                gap: 0.25rem 1.6rem;
+                border-top: 1px solid var(--ink);
+                border-bottom: 1px solid var(--line);
+                margin-top: 0.9rem;
+                padding: 0.6rem 0;
+                font-family: var(--sans);
+                font-size: 0.8rem;
+                font-weight: 500;
+            }
+            nav.sections a {
+                text-decoration: none;
+            }
+            nav.sections a:hover {
+                text-decoration: underline;
+                text-underline-offset: 3px;
+            }
+
+            /* --- Shared pieces --- */
+            .section-label {
+                font-family: var(--sans);
+                font-weight: 800;
+                font-size: 0.78rem;
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+                border-top: 2px solid var(--ink);
+                padding-top: 0.5rem;
+                margin-bottom: 0.85rem;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 0.3rem 1rem;
+            }
+            .section-label .aside {
+                font-weight: 500;
+                letter-spacing: 0;
+                text-transform: none;
+                color: var(--ink-soft);
+            }
+            .row.top {
+                display: grid;
+                grid-template-columns: 1fr 1.2fr;
+                gap: 2.5rem;
+                margin-top: 1.75rem;
+            }
+            .empty {
+                color: var(--ink-soft);
+                font-style: italic;
+            }
+            .note {
+                font-size: 0.92rem;
+                color: var(--ink-soft);
+                margin-bottom: 1rem;
+                max-width: 52rem;
+            }
+
+            /* Editor's note */
+            #intro {
+                font-size: 0.97rem;
+            }
+            #intro p + p,
+            #intro ul {
+                margin-top: 0.6rem;
+            }
+            #intro ul {
+                padding-left: 1.1rem;
+                line-height: 1.6;
+            }
+            #intro .hook {
+                font-family: var(--headline);
+                font-weight: 700;
+                font-size: 1.65rem;
+                line-height: 1.2;
+                letter-spacing: -0.01em;
+                margin-bottom: 0.7rem;
+            }
+            #intro .for {
+                font-family: var(--sans);
+                font-size: 0.85rem;
+                color: var(--ink-soft);
+                margin: -0.3rem 0 0.8rem;
+            }
+            #intro .lede {
+                font-family: var(--headline);
+                font-size: 1.2rem;
+                line-height: 1.45;
+            }
+
+            /* Ask the paper */
+            #task label {
+                display: block;
+                font-family: var(--sans);
+                font-size: 0.8rem;
+                font-weight: 600;
+                margin-bottom: 0.35rem;
+            }
+            .ask-row {
+                display: flex;
+                gap: 0.5rem;
+            }
+            #question {
+                flex: 1;
+                min-width: 0;
+                padding: 0.7rem 0.8rem;
+                border: 1px solid #bdbdbd;
+                border-radius: 6px;
+                background: #fff;
+                font-family: var(--serif);
+                font-size: 1.05rem;
+                color: var(--ink);
+                outline: none;
+            }
+            #question:focus {
+                border-color: var(--ink);
+                box-shadow: 0 0 0 3px rgba(18, 18, 18, 0.12);
+            }
+            #run {
+                padding: 0.7rem 1.2rem;
+                background: var(--ink);
+                color: #fff;
+                border: none;
+                border-radius: 6px;
+                font-family: var(--sans);
+                font-weight: 600;
+                font-size: 0.9rem;
+                white-space: nowrap;
+            }
+            .asking {
+                margin-top: 1.4rem;
+                font-family: var(--sans);
+                font-size: 0.78rem;
+                font-weight: 700;
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+                color: var(--red);
+            }
+            .chips {
+                display: flex;
+                flex-direction: column;
+                margin-top: 0.3rem;
+            }
+            .chips button {
+                text-align: left;
+                background: none;
+                border: none;
+                border-bottom: 1px solid var(--line);
+                padding: 0.6rem 0;
+                font-family: var(--headline);
+                font-weight: 600;
+                font-size: 1.08rem;
+                line-height: 1.3;
+                color: var(--ink);
+            }
+            .chips button:hover:not(:disabled) {
+                color: var(--red);
+            }
+
+            /* A word from the editor (clarification) */
+            #clarify {
+                margin-top: 1.75rem;
+                border-top: 4px solid var(--red);
+                background: var(--tint);
+                padding: 1rem 1.25rem 1.2rem;
+            }
+            #clarify .section-label {
+                border-top: none;
+                padding-top: 0;
+                color: var(--red);
+            }
+            #clarify-question {
+                font-family: var(--headline);
+                font-weight: 600;
+                font-size: 1.3rem;
+                line-height: 1.3;
+                margin-bottom: 0.8rem;
+            }
+            #options {
+                flex-direction: row;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+            }
+            #options button {
+                border: 1px solid var(--ink);
+                border-radius: 999px;
+                padding: 0.45rem 0.95rem;
+                font-family: var(--sans);
+                font-weight: 500;
+                font-size: 0.88rem;
+                background: #fff;
+            }
+            #options button:hover {
+                background: var(--ink);
+                color: #fff;
+            }
+
+            /* The wire: live updates */
+            /* The wire: a sidebar in the newsroom that stays in view beside the notebooks */
+            .newsroom-body {
+                display: grid;
+                grid-template-columns: 17rem minmax(0, 1fr);
+                gap: 1.5rem;
+                align-items: start;
+            }
+            #wire {
+                position: sticky;
+                top: 1rem;
+                background: var(--tint);
+                border-radius: 8px;
+                padding: 0.8rem 0.9rem 0.9rem;
+            }
+            .wire-head {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 0.3rem 0.6rem;
+                font-family: var(--sans);
+                font-weight: 800;
+                font-size: 0.78rem;
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+                margin-bottom: 0.6rem;
+            }
+            .wire-head .aside {
+                font-weight: 500;
+                letter-spacing: 0;
+                text-transform: none;
+                color: var(--ink-soft);
+            }
+            .live {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.35rem;
+                background: var(--red);
+                color: #fff;
+                border-radius: 3px;
+                padding: 0.1rem 0.45rem;
+                font-size: 0.68rem;
+                letter-spacing: 0.08em;
+                margin-right: 0.5rem;
+            }
+            .live::before {
+                content: "";
+                width: 0.45rem;
+                height: 0.45rem;
+                border-radius: 50%;
+                background: #fff;
+                animation: pulse 1.2s infinite;
+            }
+            @keyframes pulse {
+                50% {
+                    opacity: 0.25;
+                }
+            }
+            #activity {
+                list-style: none;
+                font-family: var(--sans);
+                font-size: 0.8rem;
+                line-height: 1.5;
+                max-height: calc(100vh - 6rem);
+                overflow-y: auto;
+                /* the timeline line is drawn inside the scroll area, so the dots on it aren't clipped */
+                background: linear-gradient(#d6d4cc, #d6d4cc) no-repeat 5px 0 / 2px 100%;
+                padding-left: 1.2rem;
+            }
+            #activity li {
+                position: relative;
+                padding: 0.3rem 0;
+            }
+            #activity li:not(.empty)::before {
+                content: "";
+                position: absolute;
+                left: -1.2rem;
+                top: 0.75rem;
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: #fff;
+                border: 2px solid var(--ink-soft);
+            }
+            #activity li:last-child:not(.empty)::before {
+                background: var(--red);
+                border-color: var(--red);
+            }
+            #activity .agent {
+                font-weight: 700;
+            }
+            #activity .agent::after {
+                content: " ·";
+                color: var(--ink-soft);
+            }
+            #activity .error {
+                color: var(--red);
+            }
+
+            /* --- The front page --- */
+            #front {
+                margin-top: 2.25rem;
+                border-top: 1px solid var(--ink);
+                padding-top: 1.1rem;
+            }
+            .kicker {
+                font-family: var(--sans);
+                font-weight: 700;
+                font-size: 0.8rem;
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+                color: var(--red);
+            }
+            .headline {
+                font-family: var(--headline);
+                font-weight: 700;
+                font-size: clamp(1.9rem, 4.6vw, 3.3rem);
+                letter-spacing: -0.015em;
+                line-height: 1.08;
+                margin: 0.35rem 0 0.7rem;
+                max-width: 58rem;
+            }
+            .byline {
+                font-family: var(--sans);
+                font-size: 0.8rem;
+                color: var(--ink-soft);
+                margin-bottom: 1.2rem;
+            }
+            .byline b {
+                color: var(--ink);
+                font-weight: 600;
+            }
+            /* The front page: the lead story beside its lead picture */
+            .front-body {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr);
+                gap: 2rem;
+                align-items: start;
+            }
+            .front-body.has-art {
+                grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+            }
+            .front-body.has-art .story.lead {
+                column-width: 17rem;
+            }
+            #lead-art {
+                order: 2;
+            }
+            #lead-art a {
+                display: block;
+                text-decoration: none;
+                font-size: 1em !important;
+                color: inherit !important;
+            }
+            #lead-art img {
+                display: block;
+                width: 100%;
+                max-height: 34rem;
+                object-fit: cover;
+                object-position: top;
+                filter: grayscale(1) contrast(1.1);
+                background: var(--tint);
+            }
+            #lead-art figcaption {
+                font-family: var(--sans);
+                font-size: 0.8rem;
+                line-height: 1.45;
+                color: var(--ink-soft);
+                margin-top: 0.45rem;
+            }
+            #lead-art .credit {
+                display: block;
+                font-size: 0.7rem;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                margin-top: 0.15rem;
+            }
+            .story {
+                column-width: 20rem;
+                column-gap: 2.5rem;
+                column-rule: 1px solid var(--line);
+                font-size: 1.05rem;
+            }
+            .story p {
+                margin-bottom: 0.8rem;
+            }
+            .story.lead > p:first-child:not(.empty)::first-letter {
+                font-family: var(--headline);
+                font-weight: 700;
+                float: left;
+                font-size: 4.1rem;
+                line-height: 0.82;
+                padding: 0.32rem 0.5rem 0 0;
+            }
+            .story ul,
+            .story ol,
+            .era ul,
+            .era ol {
+                padding-left: 1.1rem;
+                margin-bottom: 0.8rem;
+            }
+            .story li,
+            .era li {
+                margin-bottom: 0.4rem;
+                line-height: 1.5;
+            }
+            /* Citations: small and gray, like a source line */
+            #edition a {
+                font-size: 0.8em;
+                color: var(--ink-soft);
+                text-decoration-color: #c4c4c4;
+                text-underline-offset: 2px;
+            }
+            #edition a:hover {
+                color: var(--red);
+            }
+            mark.unverified {
+                background: #fde8e8;
+                color: var(--red);
+                font-family: var(--sans);
+                font-weight: 700;
+                font-size: 0.66em;
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+                padding: 0.05em 0.4em;
+                border-radius: 3px;
+            }
+
+            /* Photos: thumbnails linking to NYPL, printed as halftones inside the old eras */
+            .thumbs {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.8rem;
+                margin: 0.3rem 0 1rem;
+                break-inside: avoid;
+            }
+            #edition .thumbs a {
+                display: block;
+                width: 160px;
+                font-family: var(--sans);
+                font-size: 0.72rem;
+                line-height: 1.35;
+                text-decoration: none;
+                text-align: left;
+            }
+            .thumbs img {
+                display: block;
+                width: 160px;
+                height: 118px;
+                object-fit: cover;
+                border-radius: 3px;
+                margin-bottom: 0.3rem;
+                background: var(--tint);
+            }
+            .era:not(.era-today) .thumbs img {
+                filter: grayscale(1) contrast(1.15) sepia(0.15);
+                border-radius: 0;
+                border: 1px solid var(--ink);
+            }
+            .thumbs a:hover img {
+                filter: none !important;
+            }
+            /* A newspaper page scan: taller, showing the top of the page */
+            .thumbs a.page img {
+                height: 200px;
+                object-position: top;
+            }
+
+            /* --- Era articles: each era set in the style of its day --- */
+            #eras-wrap,
+            #photo-desk {
+                margin-top: 2.5rem;
+            }
+            /* One timeline: each era a full-width band in its period's style, joined by a line with date markers */
+            .eras {
+                position: relative;
+                display: flex;
+                flex-direction: column;
+                gap: 1.5rem;
+                padding-left: 7rem;
+            }
+            .eras::before {
+                content: "";
+                position: absolute;
+                left: 5.95rem;
+                top: 0.5rem;
+                bottom: 0.5rem;
+                width: 2px;
+                background: #bdbab0;
+            }
+            .era {
+                position: relative;
+                padding: 1.1rem 1.4rem 1.2rem;
+                border: 1px solid var(--ink);
+                font-size: 0.95rem;
+                min-width: 0;
+            }
+            .era-marker {
+                position: absolute;
+                left: -7rem;
+                top: 1.15rem;
+                width: 5rem;
+                text-align: right;
+                font-family: var(--sans);
+                font-weight: 700;
+                font-size: 0.82rem;
+                line-height: 1.2;
+                color: var(--ink);
+            }
+            /* The era's dot, centered on the timeline line */
+            .era::before {
+                content: "";
+                position: absolute;
+                left: calc(-1rem - 0.5rem + 1px);
+                top: 1.25rem;
+                width: 1rem;
+                height: 1rem;
+                border-radius: 50%;
+                background: var(--paper);
+                border: 2px solid var(--ink);
+            }
+            /* The story runs in columns across the band; its pictures across the top */
+            .era-body {
+                column-width: 22rem;
+                column-gap: 2.2rem;
+            }
+            .era-body > .thumbs {
+                column-span: all;
+            }
+            /* Paragraphs flow across both columns; a list or a strip of pictures stays in one piece */
+            .era-body > ul,
+            .era-body > ol,
+            .era-body > .table-wrap {
+                break-inside: avoid-column;
+            }
+            .era .no-records {
+                font-style: italic;
+                opacity: 0.75;
+            }
+            .era p {
+                margin-bottom: 0.6rem;
+                line-height: 1.55;
+            }
+            .era .era-title {
+                margin-bottom: 0.7rem;
+            }
+            .era .era-kicker {
+                display: block;
+                font-size: 0.68rem;
+                letter-spacing: 0.12em;
+                text-transform: uppercase;
+                margin-bottom: 0.25rem;
+            }
+            /* 1900-1920: an aged broadsheet */
+            .era-1900 {
+                background: #ece2c6;
+                font-family: "Old Standard TT", Georgia, serif;
+                text-align: justify;
+                box-shadow: inset 0 0 40px rgba(120, 90, 30, 0.18);
+            }
+            .era-1900 .era-title {
+                font-family: "UnifrakturMaguntia", serif;
+                font-weight: 400;
+                font-size: 1.9rem;
+                text-align: center;
+                border-bottom: 3px double #3b2f17;
+                padding-bottom: 0.3rem;
+            }
+            .era-1900 .era-kicker {
+                font-family: "Old Standard TT", serif;
+                font-style: italic;
+                text-transform: none;
+                letter-spacing: 0;
+                font-size: 0.8rem;
+            }
+            /* 1940: a wartime daily, condensed caps */
+            .era-1940 {
+                background: #e6dcc8;
+            }
+            .era-1940 .era-title {
+                font-family: "Oswald", sans-serif;
+                font-weight: 700;
+                text-transform: uppercase;
+                font-size: 1.9rem;
+                letter-spacing: 0.02em;
+                line-height: 1;
+                border-top: 6px solid var(--ink);
+                border-bottom: 2px solid var(--ink);
+                padding: 0.3rem 0;
+            }
+            .era-1940 .era-kicker {
+                font-family: "Oswald", sans-serif;
+                font-weight: 500;
+            }
+            /* 1960: mid-century modern, geometric sans and a teal rule */
+            .era-1960 {
+                background: #f3efe6;
+                font-family: "Jost", sans-serif;
+                border-left: 8px solid #2c7a7b;
+            }
+            .era-1960 .era-title {
+                font-family: "Jost", sans-serif;
+                font-weight: 700;
+                font-size: 1.8rem;
+                color: #2c7a7b;
+                letter-spacing: -0.01em;
+            }
+            .era-1960 .era-kicker {
+                color: #c05621;
+            }
+            /* 1980: a loud tabloid, red flag and heavy type */
+            .era-1980 {
+                background: #fbf8f2;
+                font-family: var(--sans);
+                font-size: 0.9rem;
+            }
+            .era-1980 .era-title {
+                font-family: "Anton", Impact, sans-serif;
+                font-weight: 400;
+                font-size: 2.1rem;
+                text-transform: uppercase;
+                color: #fff;
+                background: #c53030;
+                padding: 0.2rem 0.5rem;
+                line-height: 1.1;
+            }
+            .era-1980 .era-kicker {
+                font-family: var(--sans);
+                color: #fff;
+            }
+            /* Today: this paper's own style */
+            .era-today {
+                background: #fff;
+                font-family: var(--serif);
+                border: 1px solid var(--line);
+                border-top: 4px solid var(--red);
+            }
+            .era-today .era-title {
+                font-family: var(--headline);
+                font-weight: 700;
+                font-size: 1.7rem;
+                letter-spacing: -0.01em;
+            }
+            .era-today .era-kicker {
+                font-family: var(--sans);
+                font-weight: 700;
+                color: var(--red);
+            }
+            .era-other .era-title {
+                font-family: var(--headline);
+                font-size: 1.6rem;
+            }
+
+            /* --- The back pages: the record, what remains, corrections --- */
+            #back {
+                margin-top: 2.5rem;
+                display: grid;
+                grid-template-columns: 1.6fr 1fr;
+                gap: 2.5rem;
+                align-items: start;
+            }
+            #back > .wide {
+                grid-column: 1 / -1;
+            }
+            #back > * {
+                min-width: 0;
+            }
+            .article-head {
+                font-family: var(--headline);
+                font-weight: 700;
+                font-size: 1.75rem;
+                letter-spacing: -0.01em;
+                line-height: 1.12;
+                margin-bottom: 0.7rem;
+            }
+            .table-wrap {
+                overflow-x: auto;
+                margin: 0.4rem 0 0.9rem;
+                break-inside: avoid;
+                column-span: all;
+            }
+            #edition table {
+                border-collapse: collapse;
+                font-size: 0.88rem;
+                min-width: 100%;
+                text-align: left;
+            }
+            #edition th,
+            #edition td {
+                border-bottom: 1px solid var(--line);
+                padding: 0.6rem 0.7rem;
+                vertical-align: top;
+                line-height: 1.45;
+            }
+            #edition th {
+                font-family: var(--sans);
+                font-weight: 700;
+                font-size: 0.74rem;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+                border-bottom: 2px solid var(--ink);
+            }
+            #edition tbody tr:nth-child(even) {
+                background: #fafaf8;
+            }
+            #edition td:first-child {
+                font-weight: 600;
+            }
+            .corrections {
+                background: var(--tint);
+                padding: 1rem 1.15rem;
+                font-size: 0.93rem;
+                border-top: 4px solid var(--ink);
+            }
+            .corrections .article-head {
+                font-family: var(--sans);
+                font-weight: 800;
+                font-size: 0.8rem;
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+                margin-bottom: 0.2rem;
+            }
+            .corrections .sub {
+                font-family: var(--headline);
+                font-style: italic;
+                font-size: 1.1rem;
+                margin-bottom: 0.7rem;
+            }
+            .corrections p,
+            .corrections li {
+                margin-bottom: 0.55rem;
+                line-height: 1.55;
+            }
+            .corrections ul {
+                padding-left: 1.1rem;
+            }
+            #checks {
+                display: flex;
+                gap: 0.75rem;
+                align-items: flex-start;
+                font-family: var(--sans);
+                font-size: 0.85rem;
+                line-height: 1.5;
+                color: var(--ink-soft);
+                border-top: 1px solid var(--line);
+                border-bottom: 1px solid var(--line);
+                padding: 0.8rem 0;
+            }
+            #checks .tick {
+                flex: none;
+                width: 1.5rem;
+                height: 1.5rem;
+                border-radius: 50%;
+                background: #1f7a4d;
+                color: #fff;
+                display: grid;
+                place-items: center;
+                font-weight: 700;
+            }
+            #checks b {
+                color: var(--ink);
+            }
+
+            /* --- The newsroom: one card per agent, its byline over its notebook (the context panel) and its tool calls --- */
+            #newsroom {
+                margin-top: 3rem;
+            }
+            #newsroom .ctx-grid {
+                grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+                gap: 1rem;
+            }
+            #work:not(:empty) {
+                margin-top: 1rem;
+            }
+            .notebook {
+                position: relative;
+                background: #fff;
+                border: 1px solid var(--line);
+                border-radius: 8px;
+                padding: 0.9rem 0.85rem 0.75rem;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+                font-family: var(--sans);
+                font-size: 0.76rem;
+            }
+            /* The pad's spiral binding along the top; red on the notebook that changed last */
+            .notebook::before {
+                content: "";
+                position: absolute;
+                top: -4px;
+                left: 1rem;
+                right: 1rem;
+                height: 8px;
+                background: repeating-linear-gradient(90deg, #9a9a9a 0 5px, transparent 5px 12px);
+                border-radius: 4px;
+                opacity: 0.55;
+            }
+            .notebook.active {
+                border-color: #e4b3b5;
+            }
+            .notebook.active::before {
+                background: repeating-linear-gradient(90deg, var(--red) 0 5px, transparent 5px 12px);
+                opacity: 1;
+            }
+            #newsroom .ctx-head {
+                display: flex;
+                gap: 0.65rem;
+                align-items: center;
+                padding: 0 0 0.7rem;
+                margin-bottom: 0.6rem;
+                border: none;
+                border-bottom: 1px solid var(--line);
+                text-transform: none;
+                letter-spacing: 0;
+                color: var(--ink);
+            }
+            .avatar {
+                flex: none;
+                width: 2.3rem;
+                height: 2.3rem;
+                border-radius: 50%;
+                display: grid;
+                place-items: center;
+                font-family: var(--sans);
+                font-weight: 700;
+                font-size: 0.78rem;
+                color: #fff;
+                background: var(--ink);
+            }
+            .avatar.reporter {
+                background: var(--blue);
+            }
+            .avatar.desk {
+                background: var(--red);
+            }
+            .byline-name {
+                display: block;
+                font-family: var(--headline);
+                font-weight: 700;
+                font-size: 1.08rem;
+                line-height: 1.2;
+            }
+            .byline-role {
+                display: block;
+                font-family: var(--sans);
+                font-size: 0.72rem;
+                color: var(--ink-soft);
+            }
+            .notebook .ctx-pages {
+                max-height: 30rem;
+            }
+            /* Each message: a page of the pad, ruled like a steno notebook */
+            #newsroom .context-msg {
+                background-color: #fffef9;
+                background-image: repeating-linear-gradient(transparent 0 1.35rem, #e3ecf4 1.35rem calc(1.35rem + 1px));
+                background-position: 0 0.55rem;
+                line-height: calc(1.35rem + 1px);
+                border-left: 3px solid var(--ink-soft);
+                border-radius: 0 4px 4px 0;
+                padding: 0.45rem 0.7rem 0.55rem;
+                margin-bottom: 0.5rem;
+                color: #2a2a2a;
+                font-family: var(--sans);
+            }
+            #newsroom .context-msg .role {
+                font-family: var(--sans);
+                font-size: 0.66rem;
+                font-weight: 700;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+            }
+            /* Newspaper names for each kind of message (copied messages keep "(from ...)") */
+            #newsroom .context-msg:not(.copied) .role {
+                font-size: 0;
+            }
+            #newsroom .context-msg:not(.copied) .role::after {
+                font-size: 0.66rem;
+            }
+            #newsroom .context-msg.system {
+                border-left-color: var(--ink);
+            }
+            #newsroom .context-msg.system .role::after {
+                content: "Standing orders";
+            }
+            #newsroom .context-msg.user {
+                border-left-color: var(--red);
+            }
+            #newsroom .context-msg.user .role {
+                color: var(--red);
+            }
+            #newsroom .context-msg.user .role::after {
+                content: "The assignment";
+            }
+            #newsroom .context-msg.assistant {
+                border-left-color: var(--blue);
+            }
+            #newsroom .context-msg.assistant .role {
+                color: var(--blue);
+            }
+            #newsroom .context-msg.assistant .role::after {
+                content: "Notes & calls";
+            }
+            #newsroom .context-msg.tool {
+                border-left-color: var(--gold);
+            }
+            #newsroom .context-msg.tool .role {
+                color: var(--gold);
+            }
+            #newsroom .context-msg.tool .role::after {
+                content: "From the source";
+            }
+            #newsroom .context-msg.thinking {
+                border-left-color: #c9c9c9;
+                color: #9a9a9a;
+            }
+            #newsroom .context-msg.thinking .role::after {
+                content: "Thinking (not sent back)";
+            }
+            #newsroom .context-msg summary {
+                color: var(--ink-soft);
+            }
+            #newsroom .context-msg.copied {
+                opacity: 0.6;
+            }
+            #newsroom .ctx-note {
+                font-family: var(--sans);
+                font-style: italic;
+                color: var(--ink-soft);
+            }
+            @keyframes context-flash {
+                from {
+                    background-color: #fff4cc;
+                }
+            }
+            /* Under the notebook: every tool call the agent made, with its arguments and result */
+            .notebook > details.calls {
+                margin-top: 0.6rem;
+                border-top: 1px solid var(--line);
+                padding-top: 0.55rem;
+            }
+            .notebook > details.calls > summary {
+                cursor: pointer;
+                font-weight: 600;
+                font-size: 0.78rem;
+            }
+            .notebook .call {
+                margin-top: 0.45rem;
+            }
+            .notebook .call summary {
+                cursor: pointer;
+                font-family: ui-monospace, Menlo, monospace;
+                font-size: 0.72rem;
+                overflow-wrap: anywhere;
+            }
+            .notebook .call pre {
+                font-family: ui-monospace, Menlo, monospace;
+                font-size: 0.7rem;
+                white-space: pre-wrap;
+                word-break: break-word;
+                background: var(--tint);
+                border-radius: 4px;
+                padding: 0.55rem;
+                margin-top: 0.35rem;
+                max-height: 16rem;
+                overflow-y: auto;
+            }
+
+            footer {
+                margin-top: 3rem;
+                border-top: 1px solid var(--ink);
+                padding-top: 0.8rem;
+                font-family: var(--sans);
+                font-size: 0.76rem;
+                line-height: 1.6;
+                color: var(--ink-soft);
+                display: flex;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                gap: 0.5rem 2rem;
+            }
+            footer b {
+                font-family: "UnifrakturMaguntia", Georgia, serif;
+                font-weight: 400;
+                font-size: 1.2rem;
+                color: var(--ink);
+            }
+
+            @media (max-width: 760px) {
+                .row.top,
+                #back {
+                    grid-template-columns: 1fr;
+                    gap: 2rem;
+                }
+                .topbar .hide-phone {
+                    display: none;
+                }
+                nav.sections {
+                    justify-content: flex-start;
+                    flex-wrap: nowrap;
+                    overflow-x: auto;
+                    gap: 1.2rem;
+                }
+                nav.sections a {
+                    white-space: nowrap;
+                }
+                .eras {
+                    padding-left: 1.2rem;
+                }
+                .eras::before {
+                    left: 0.3rem;
+                }
+                .era::before {
+                    left: calc(-0.9rem - 0.5rem + 1px);
+                    width: 0.8rem;
+                    height: 0.8rem;
+                }
+                .era-marker {
+                    display: none;
+                }
+                .ask-row {
+                    flex-direction: column;
+                }
+                .newsroom-body {
+                    grid-template-columns: minmax(0, 1fr);
+                }
+                #wire {
+                    position: static;
+                }
+                #activity {
+                    max-height: 16rem;
+                }
+                .front-body.has-art {
+                    grid-template-columns: minmax(0, 1fr);
+                }
+                #lead-art {
+                    order: 0;
+                }
+                .thumbs a.page img {
+                    height: 170px;
+                }
+                /* Tables become one card per row, each cell labeled with its column */
+                #edition table,
+                #edition tbody,
+                #edition tr,
+                #edition td {
+                    display: block;
+                    min-width: 0;
+                }
+                #edition thead {
+                    display: none;
+                }
+                #edition tr {
+                    border-top: 2px solid var(--ink);
+                    padding: 0.5rem 0 0.7rem;
+                    background: none !important;
+                }
+                #edition td {
+                    border: none;
+                    padding: 0.15rem 0;
+                }
+                #edition td[data-label]:not([data-label=""])::before {
+                    content: attr(data-label);
+                    display: block;
+                    font-family: var(--sans);
+                    font-weight: 700;
+                    font-size: 0.68rem;
+                    letter-spacing: 0.05em;
+                    text-transform: uppercase;
+                    color: var(--ink-soft);
+                }
+                #edition td:first-child {
+                    font-family: var(--headline);
+                    font-size: 1.15rem;
+                }
+                #edition td:first-child::before {
+                    display: none !important;
+                }
+                #edition .thumbs a,
+                .thumbs img {
+                    width: 135px;
+                }
+                .thumbs img {
+                    height: 100px;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <main>
+            <header class="masthead">
+                <div class="topbar">
+                    <span><b id="today"></b></span>
+                    <span class="hide-phone">New York · Five boroughs, five eras</span>
+                    <span>Every fact with its source</span>
+                </div>
+                <h1 class="nameplate">The Neighborhood Time Machine</h1>
+                <p class="motto">New York's neighborhoods, then and now, from the city's own records</p>
+                <nav class="sections">
+                    <a href="#ask">Ask</a>
+                    <a href="#front">Front Page</a>
+                    <a href="#eras-wrap">Then &amp; Now</a>
+                    <a href="#back">The Record</a>
+                    <a href="#photo-desk">Photos</a>
+                    <a href="#newsroom">The Newsroom (live)</a>
+                </nav>
+            </header>
+
+            <div class="row top">
+                <section id="intro">
+                    <div class="section-label">Editor's Note</div>
+                    <p class="hook">Before your block was yours, it was someone else's first home in America.</p>
+                    <p class="for">For anyone who has ever wondered who lived on their block before them.</p>
+                    <p class="lede">
+                        Name a New York City neighborhood and step back through its records: what its streets looked like
+                        around 1900–1920, 1940, 1960, 1980 and today; which immigrant communities arrived, peaked and moved
+                        on; and which of their buildings and institutions are still standing.
+                    </p>
+                    <p>
+                        You can ask any of the following questions or just say "tell me the story of <neighborhood>" and get all three:
+                    </p>
+                    <ul>
+                        <li><b>Then &amp; now</b>: what did it look like in each era?</li>
+                        <li><b>Who settled, and when</b>: which groups arrived, peaked and moved on?</li>
+                        <li><b>What remains</b>: which buildings and institutions survive?</li>
+                    </ul>
+                    <p>Or just say "tell me its story" and get all three.</p>
+                    <p>
+                        <b>Behind the scenes:</b> an editor agent plans the research and sends several reporter agents out in
+                        parallel to historical newspapers, the New York Times, NYPL's digital collections, landmark
+                        designation reports and the census. A writer turns what they find into the edition below, with every
+                        fact linked to its source. It goes to press in about 5 minutes.
+                    </p>
+                </section>
+
+                <section id="ask">
+                    <div class="section-label">Ask the Paper</div>
+                    <form id="task">
+                        <label for="question">Your question</label>
+                        <div class="ask-row">
+                            <input id="question" placeholder="e.g. Which immigrant groups settled in the Lower East Side, and when?" autocomplete="off" />
+                            <button id="run" type="submit">Go to press</button>
+                        </div>
+                    </form>
+                    <p class="asking">Readers are asking</p>
+                    <div class="chips" id="examples">
+                        <button type="button">How did Jackson Heights become one of the most diverse neighborhoods in the city?</button>
+                        <button type="button">How did downtown Flushing become a Chinatown?</button>
+                        <button type="button">How did Little Haiti in Flatbush grow?</button>
+                        <button type="button">Who has called Sunset Park home over the last century?</button>
+                        <button type="button">Take me to an immigrant neighborhood I've never heard of</button>
+                    </div>
+                </section>
+            </div>
+
+            <section id="clarify" hidden>
+                <div class="section-label">A Word from the Editor</div>
+                <p id="clarify-question"></p>
+                <div class="chips" id="options"></div>
+            </section>
+
+            <!-- The edition: front page, era articles, photo desk, back pages. Filled in when the report arrives. -->
+            <div id="edition">
+                <article id="front">
+                    <div class="kicker" id="kicker">Today's edition</div>
+                    <h2 class="headline" id="headline">The next edition goes to press when you ask a question</h2>
+                    <div class="byline" id="byline">By <b>the Neighborhood Time Machine staff</b></div>
+                    <div class="front-body" id="front-body">
+                        <div class="story lead" id="lead">
+                            <p class="empty">The front-page story will answer your question, with a link to the source of every fact.</p>
+                        </div>
+                        <figure id="lead-art" hidden></figure>
+                    </div>
+                </article>
+                <section id="eras-wrap" hidden>
+                    <div class="section-label">Then &amp; Now <span class="aside">Each era in the style of its day, with the photos and newspaper pages its story cites</span></div>
+                    <div class="eras" id="eras"></div>
+                </section>
+                <div id="back"></div>
+                <section id="photo-desk" hidden>
+                    <div class="section-label">From the Photo Desk <span class="aside" id="photo-count"></span></div>
+                    <p class="note">
+                        More photos, maps and newspaper pages the stories cite, from NYPL's Digital Collections and the Library
+                        of Congress: undated ones, and ones from an era this edition has no article for. Each opens its page at
+                        the library.
+                    </p>
+                    <div class="thumbs" id="photos"></div>
+                </section>
+            </div>
+
+            <section id="newsroom">
+                <div class="section-label">The Newsroom <span class="aside" id="work-count">Live while the paper is being written</span></div>
+                <p class="note">
+                    Who wrote this edition, and how. The Assignment Desk (Clarifier) works out the neighborhood, the Editor
+                    (Lead) plans the research and sends out reporters, the Staff Reporters (Researchers) work in parallel, and
+                    the Rewrite Desk (Writer) writes it up. Each card is one agent's notebook: its full context, one page per
+                    message, from its standing orders and assignment to its notes, tool calls and what each source sent back.
+                    Reporters working at the same time open their notebooks at the same time, each starting blank: a fresh
+                    context with only its own assignment. When the edition is filed, each card also lists every tool call
+                    that agent made, with its arguments and result.
+                </p>
+                <div class="newsroom-body">
+                    <!-- The wire: one line per step, beside the notebooks it summarizes -->
+                    <aside id="wire">
+                        <div class="wire-head">
+                            <span><span class="live" id="live" hidden>Live</span>The Wire</span>
+                            <span class="aside" id="status"></span>
+                        </div>
+                        <ol id="activity"><li class="empty">Updates from each agent appear here while the paper is being written.</li></ol>
+                    </aside>
+                    <div class="newsroom-main">
+                        <p class="empty" id="newsroom-empty">The notebooks open when the reporters go out.</p>
+                        <div id="context-home"></div>
+                        <!-- Agents with tool calls but no notebook (if the live view missed them) get a card here -->
+                        <div id="work" class="ctx-grid"></div>
+                    </div>
+                </div>
+            </section>
+
+            <footer>
+                <span><b>The Neighborhood Time Machine</b></span>
+                <span>
+                    Sources: Library of Congress (Chronicling America) · The New York Times · New York Public Library Digital
+                    Collections · NYC Landmarks Preservation Commission · U.S. Census Bureau · NYC Municipal Archives
+                </span>
+            </footer>
+        </main>
+
+        <script src="/context-panel.js"></script>
+        <script>
+            const $ = (id) => document.getElementById(id);
+            let source = null;
+            let runId = null;
+            let question = "";
+
+            const longDate = (d) => d.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+            $("today").textContent = longDate(new Date());
+
+            function el(tag, cls, text) {
+                const e = document.createElement(tag);
+                if (cls) e.className = cls;
+                if (text) e.textContent = text;
+                return e;
+            }
+
+            function role(agent) {
+                if (agent === "Clarifier") return "Assignment Desk";
+                if (agent === "Lead") return "Editor";
+                if (agent === "Writer") return "Rewrite Desk";
+                if (agent.startsWith("Researcher")) return "Staff Reporter";
+                return "Staff";
+            }
+
+            function initials(agent) {
+                const n = agent.match(/\d+/);
+                return agent[0] + (n ? n[0] : "");
+            }
+
+            // Each notebook's heading is the agent's byline: the context panel calls this for every new notebook
+            window.labelNotebook = (agent, head) => {
+                const kind = agent.startsWith("Researcher") ? " reporter" : agent === "Lead" ? "" : " desk";
+                const who = el("span");
+                who.append(el("span", "byline-name", agent), el("span", "byline-role", role(agent)));
+                head.replaceChildren(el("span", "avatar" + kind, initials(agent)), who);
+                $("newsroom-empty").hidden = true;
+            };
+
+            function addActivity(agent, text, cls = "") {
+                $("activity").querySelector(".empty")?.remove();
+                const li = el("li", cls);
+                if (agent) li.append(el("span", "agent", agent), " ");
+                li.append(text);
+                $("activity").appendChild(li);
+                $("activity").scrollTop = $("activity").scrollHeight;
+            }
+
+            // --- The report: markdown -> sanitized HTML, then laid out as a newspaper by its headings ---
+
+            const SECTION = /^(overview|then\s*&\s*now|who settled|what remains|what the records)/i;
+
+            // Split the rendered report into sections by heading: [{title, nodes}]. A section the writer
+            // gave the wrong heading level (### instead of ##) still starts a new section.
+            function splitSections(container) {
+                const sections = [];
+                let current = { title: "", nodes: [] };
+                for (const node of [...container.children]) {
+                    const isSection = /^H[12]$/.test(node.tagName) || (node.tagName === "H3" && SECTION.test(node.textContent.trim()));
+                    if (isSection) {
+                        if (current.title || current.nodes.length) sections.push(current);
+                        current = { title: node.textContent.trim(), nodes: [] };
+                    } else current.nodes.push(node);
+                }
+                if (current.title || current.nodes.length) sections.push(current);
+                return sections;
+            }
+
+            function eraClass(title) {
+                const t = title.toLowerCase();
+                if (/today|present|20[0-2]\d/.test(t)) return "era-today";
+                if (/1[89]\d\d|19[01]\d/.test(t) && !/19[3-9]\d/.test(t)) return "era-1900";
+                if (/19[34]\d/.test(t)) return "era-1940";
+                if (/19[56]\d/.test(t)) return "era-1960";
+                if (/19[789]\d/.test(t)) return "era-1980";
+                return "era-other";
+            }
+
+            const ERA_KICKER = {
+                "era-1900": "From our files, the turn of the century",
+                "era-1940": "From the archives · Wartime New York",
+                "era-1960": "From the archives · The mid-century city",
+                "era-1980": "From the archives · The eighties",
+                "era-today": "The neighborhood now",
+                "era-other": "From the archives",
+            };
+
+            function showReport(markdown, checks, thumbnails, neighborhood) {
+                // The citation check marks claims it couldn't verify: make them visible
+                const html = DOMPurify.sanitize(marked.parse(markdown.replaceAll("(unverified)", '<mark class="unverified">unverified</mark>')));
+                const scratch = document.createElement("div");
+                scratch.innerHTML = html;
+                scratch.querySelectorAll("a").forEach((a) => {
+                    a.target = "_blank";
+                    a.rel = "noopener";
+                });
+                scratch.querySelectorAll("table").forEach((table) => {
+                    // Label each cell with its column, so a phone can show each row as a card
+                    const heads = [...table.querySelectorAll("th")].map((th) => th.textContent.trim());
+                    table.querySelectorAll("tr").forEach((tr) => [...tr.children].forEach((td, i) => td.tagName === "TD" && (td.dataset.label = heads[i] || "")));
+                    const wrap = el("div", "table-wrap");
+                    table.replaceWith(wrap);
+                    wrap.appendChild(table);
+                });
+
+                // The front page: the neighborhood is the kicker, the question the headline, the overview the lead story
+                $("kicker").textContent = neighborhood || "Today's edition";
+                $("headline").textContent = question;
+                $("byline").replaceChildren("By ", el("b", "", "the Neighborhood Time Machine staff"), " · " + longDate(new Date()));
+                const lead = $("lead"), back = $("back");
+                lead.replaceChildren();
+
+                for (const section of splitSections(scratch)) {
+                    const t = section.title.toLowerCase();
+                    if (!t || t.startsWith("overview")) {
+                        lead.append(...section.nodes);
+                    } else if (/then\s*&\s*now/.test(t)) {
+                        makeEraArticles(section.nodes);
+                    } else if (t.startsWith("what the records")) {
+                        const box = el("aside", "corrections");
+                        box.append(el("h3", "article-head", "Corrections & Omissions"), el("p", "sub", "What the records don't show"), ...section.nodes);
+                        back.appendChild(box);
+                    } else {
+                        // Who settled (the record, with its table) runs full width; what remains is a story
+                        const settled = t.startsWith("who settled");
+                        const article = el("article", settled ? "wide" : "");
+                        const story = el("div", "story");
+                        story.append(...section.nodes);
+                        article.append(el("div", "section-label", settled ? "The Record" : t.startsWith("what remains") ? "Still Standing" : "More"), el("h3", "article-head", section.title), story);
+                        back.appendChild(article);
+                    }
+                }
+                if (!lead.children.length) lead.appendChild(el("p", "empty", "No overview in this edition."));
+                const wide = back.querySelector(".wide");
+                if (wide) back.prepend(wide);
+
+                placePictures(thumbnails || {});
+
+                if (checks && checks.length) {
+                    const first = checks[0], last = checks[checks.length - 1];
+                    const p = el("p");
+                    p.id = "checks";
+                    const text = el("span");
+                    text.append(
+                        el("b", "", "From the fact-check desk. "),
+                        `${last.claims} claims, ${last.cited_links} links, each to a source a researcher found in this run. ` +
+                            (checks.length > 1 ? `The first draft had ${first.failing} problem(s); the writer revised it. ` : "") +
+                            (last.failing ? `${last.failing} claim(s) still failing are marked unverified. ` : "") +
+                            "The check confirms each source exists, not that it says exactly what the claim says.",
+                    );
+                    p.append(el("span", "tick", "✓"), text);
+                    const row = el("div", "wide");
+                    row.appendChild(p);
+                    back.appendChild(row);
+                }
+            }
+
+            // Under "Then & now", each "### <era>" heading and what follows it becomes an article in its era's style
+            function makeEraArticles(nodes) {
+                const eras = $("eras");
+                let body = null;
+                for (const node of nodes) {
+                    if (/^H[3-6]$/.test(node.tagName)) {
+                        const cls = eraClass(node.textContent);
+                        const article = el("article", "era " + cls);
+                        const title = el("h3", "era-title");
+                        title.append(el("span", "era-kicker", ERA_KICKER[cls]), node.textContent.trim());
+                        body = el("div", "era-body");
+                        article.append(el("div", "era-marker", node.textContent.trim()), title, body);
+                        eras.appendChild(article);
+                    } else {
+                        if (!body) {
+                            // text before the first era heading: an intro article
+                            const article = el("article", "era era-other");
+                            body = el("div", "era-body");
+                            article.append(body);
+                            eras.appendChild(article);
+                        }
+                        body.appendChild(node);
+                    }
+                }
+                // An era the writer left without text says so, instead of showing an empty band
+                for (const body of eras.querySelectorAll(".era-body")) {
+                    if (!body.textContent.trim()) body.appendChild(el("p", "no-records", "Nothing for this era in the records the reporters searched."));
+                }
+                $("eras-wrap").hidden = !eras.children.length;
+            }
+
+            // --- Pictures: NYPL photos and maps, and scans of the newspaper pages the reporters searched ---
+            // Only items a researcher's search returned have pictures, so the page never shows an image nobody found.
+
+            function thumbLink(item) {
+                const link = Object.assign(document.createElement("a"), { href: item.url, target: "_blank", rel: "noopener", title: item.caption });
+                if (item.kind === "page") link.className = "page";
+                const img = Object.assign(document.createElement("img"), { src: item.image, alt: item.caption, loading: "lazy" });
+                link.append(img, item.caption);
+                return link;
+            }
+
+            const normalize = (href) => href.replace(/^http:/, "https:").replace(/[.,;:/]+$/, ""); // the writer may drop a trailing slash
+            const yearOf = (text) => {
+                const m = String(text || "").match(/\b(1[89]\d\d|20\d\d)\b/);
+                return m ? +m[1] : null;
+            };
+            // The era article a picture belongs in, by its date
+            function eraOfYear(year) {
+                if (year === null) return null;
+                if (year < 1930) return "era-1900";
+                if (year < 1950) return "era-1940";
+                if (year < 1970) return "era-1960";
+                if (year < 1995) return "era-1980";
+                return "era-today";
+            }
+            const MAX_PER_ERA = 6;
+
+            function placePictures(thumbnails) {
+                // Only pictures the text cites: a search for a place name also returns other places with the same
+                // name (Kensington in London, Manhasset, Philadelphia), and only the ones a story cites are about this one.
+                // Where each is cited: the first era article that cites it, else the front page or back pages.
+                const citedIn = new Map();
+                for (const a of $("edition").querySelectorAll("a[href]")) {
+                    const url = normalize(a.getAttribute("href"));
+                    if (!citedIn.has(url) || (!citedIn.get(url) && a.closest(".era"))) citedIn.set(url, a.closest(".era"));
+                }
+                const items = Object.entries(thumbnails)
+                    .filter(([url]) => citedIn.has(normalize(url)))
+                    .map(([url, t]) => ({ url, ...t, era: citedIn.get(normalize(url)), year: yearOf(t.date || t.caption) }));
+
+                // The front page's lead picture: a photo the overview cites, else any cited photo, else a cited newspaper page
+                const inLead = new Set([...$("lead").querySelectorAll("a[href]")].map((a) => normalize(a.getAttribute("href"))));
+                const lead = items.find((i) => i.kind !== "page" && inLead.has(normalize(i.url))) || items.find((i) => i.kind !== "page") || items[0];
+                showLeadArt(lead);
+
+                // Every other picture goes in the era article that cites it, or else the one for its date;
+                // the rest go to the photo desk
+                const rest = [], counts = new Map();
+                // (the lead picture too: it also belongs in the era card that cites it)
+                for (const item of items) {
+                    const cls = eraOfYear(item.year);
+                    const era = item.era || (cls && $("eras").querySelector(".era." + cls));
+                    if (era && (counts.get(era) || 0) < MAX_PER_ERA) {
+                        counts.set(era, (counts.get(era) || 0) + 1);
+                        const body = era.querySelector(".era-body");
+                        const strip = body.querySelector(":scope > .thumbs") || body.insertAdjacentElement("afterbegin", el("div", "thumbs"));
+                        strip.appendChild(thumbLink(item));
+                    } else rest.push(item);
+                }
+                $("photos").replaceChildren(...rest.map(thumbLink));
+                $("photo-count").textContent = rest.length ? `${rest.length} item${rest.length > 1 ? "s" : ""}` : "";
+                $("photo-desk").hidden = !rest.length;
+            }
+
+            function showLeadArt(item) {
+                const figure = $("lead-art");
+                figure.hidden = !item;
+                $("front-body").classList.toggle("has-art", !!item);
+                if (!item) return figure.replaceChildren();
+                const link = Object.assign(document.createElement("a"), { href: item.url, target: "_blank", rel: "noopener" });
+                link.appendChild(Object.assign(document.createElement("img"), { src: item.large || item.image, alt: item.caption }));
+                const caption = el("figcaption", "", item.kind === "page" ? `A page from the ${item.caption}` : item.caption);
+                caption.appendChild(el("span", "credit", item.credit || (item.kind === "page" ? "Library of Congress, Chronicling America" : "New York Public Library Digital Collections")));
+                link.appendChild(caption);
+                figure.replaceChildren(link);
+            }
+
+            // --- The newsroom: every tool call from every agent, under that agent's notebook ---
+
+            function showWork(calls) {
+                if (!calls || !calls.length) return;
+                const groups = new Map();
+                for (const call of calls) {
+                    if (!groups.has(call.agent)) groups.set(call.agent, []);
+                    groups.get(call.agent).push(call);
+                }
+                for (const [agent, list] of groups) {
+                    // The agent's notebook card, or a new card if the live view never got its context
+                    let card = [...document.querySelectorAll("#newsroom .notebook")].find((n) => n.dataset.agent === agent);
+                    if (!card) {
+                        card = el("div", "notebook");
+                        card.dataset.agent = agent;
+                        const head = el("div", "ctx-head");
+                        window.labelNotebook(agent, head);
+                        card.appendChild(head);
+                        $("work").appendChild(card);
+                    }
+                    card.querySelector(":scope > details.calls")?.remove();
+                    const n = `${list.length} tool call${list.length > 1 ? "s" : ""}`;
+                    card.querySelector(".byline-role").textContent = `${role(agent)} · ${n}`;
+                    const details = el("details", "calls");
+                    details.appendChild(el("summary", "", `${n}: arguments and results`));
+                    for (const call of list) {
+                        const item = el("details", "call");
+                        const args = Object.entries(call.args || {})
+                            .filter(([, v]) => v !== null && v !== "")
+                            .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+                            .join(", ");
+                        item.append(el("summary", "", `${call.name}(${args.length > 160 ? args.slice(0, 160) + "…" : args})`), el("pre", "", call.result));
+                        details.appendChild(item);
+                    }
+                    card.appendChild(details);
+                }
+                $("work-count").textContent = `${calls.length} tool calls by ${groups.size} agents`;
+            }
+
+            function finish(message) {
+                $("status").textContent = message;
+                $("live").hidden = true;
+                $("run").disabled = false;
+                source.close();
+            }
+
+            // The server keeps nothing between requests. To answer a clarifying question, send the
+            // original question, the question asked, and the answer.
+            function showClarify(event, original) {
+                $("clarify").hidden = false;
+                $("clarify-question").textContent = event.question;
+                $("options").replaceChildren(
+                    ...event.options.map((option) => {
+                        const b = el("button", "", option);
+                        b.type = "button";
+                        b.onclick = () => {
+                            // An out-of-scope reply suggests new questions; otherwise the option answers this one
+                            if (event.out_of_scope) {
+                                $("question").value = option;
+                                start({ question: option });
+                            } else start({ question: original, asked: event.question, answer: option });
+                        };
+                        return b;
+                    }),
+                );
+                $("clarify").scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+
+            $("task").addEventListener("submit", (e) => {
+                e.preventDefault();
+                const q = $("question").value.trim();
+                if (q) start({ question: q });
+            });
+
+            for (const b of $("examples").querySelectorAll("button")) {
+                b.onclick = () => {
+                    $("question").value = b.textContent;
+                    start({ question: b.textContent });
+                };
+            }
+
+            // A new question clears the last edition
+            function resetEdition() {
+                $("kicker").textContent = "Going to press";
+                $("headline").textContent = question;
+                $("byline").replaceChildren("By ", el("b", "", "the Neighborhood Time Machine staff"));
+                $("lead").replaceChildren(el("p", "empty", "The reporters are out. The story appears here when the writer files it."));
+                $("eras").replaceChildren();
+                $("eras-wrap").hidden = true;
+                $("photos").replaceChildren();
+                $("photo-desk").hidden = true;
+                showLeadArt(null);
+                $("back").replaceChildren();
+                $("work").replaceChildren();
+                $("work-count").textContent = "Live while the paper is being written";
+                $("newsroom-empty").hidden = false;
+            }
+
+            function start(request) {
+                if (source) source.close();
+                question = request.question;
+                const params = new URLSearchParams(request);
+                $("clarify").hidden = true;
+                $("activity").replaceChildren();
+                $("status").textContent = "Reporters are out";
+                $("live").hidden = false;
+                $("run").disabled = true;
+                resetEdition();
+                resetContext();
+                $("newsroom").scrollIntoView({ behavior: "smooth", block: "start" });
+
+                source = new EventSource("/run?" + params);
+                source.onmessage = (msg) => {
+                    const event = JSON.parse(msg.data);
+                    if (event.type === "start") runId = event.run_id;
+                    else if (event.type === "context") showContext(runId);
+                    else if (event.type === "activity") addActivity(event.agent, event.text);
+                    else if (event.type === "done") {
+                        showReport(event.markdown, event.checks, event.thumbnails, event.neighborhood);
+                        showWork(event.tool_calls);
+                        finish("Filed");
+                        $("front").scrollIntoView({ behavior: "smooth" });
+                    } else if (event.type === "clarify") {
+                        showClarify(event, request.question);
+                        showWork(event.tool_calls);
+                        finish("Needs an answer");
+                    } else if (event.type === "error") {
+                        addActivity("", event.message, "error");
+                        finish("Failed");
+                    }
+                };
+                source.onerror = () => {
+                    addActivity("", "Lost the connection to the server.", "error");
+                    finish("Failed");
+                };
+            }
+        </script>
+    </body>
+</html>
