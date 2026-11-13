@@ -14,6 +14,8 @@ import time
 from collections import Counter
 
 import httpx
+
+from cache import BoundedCache
 from pypdf import PdfReader
 
 import geo
@@ -34,7 +36,7 @@ MAX_CHARS = 10_000
 # Text on each side of a match in a report
 CONTEXT_CHARS = 700
 
-_cache: dict[str, object] = {}
+_cache = BoundedCache(20)  # newest entries only: see cache.py
 
 
 def _get(url: str, params: dict | None = None) -> httpx.Response:

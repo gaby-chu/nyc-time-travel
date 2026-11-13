@@ -1016,6 +1016,7 @@ HERE = Path(__file__).parent
 
 # run_id -> every agent's context, in order. In-memory, single process. The context panel reads it.
 sessions: dict[str, AgentContexts] = {}
+MAX_SESSIONS = 5
 
 app = FastAPI()
 add_context_panel(app, sessions)
@@ -1034,6 +1035,10 @@ async def run(question: str, asked: str | None = None, answer: str | None = None
     call again with the original question, the question asked, and the answer."""
     run_id = str(uuid.uuid4())
     sessions[run_id] = AgentContexts()
+    # Keep the newest runs' contexts only: each holds every agent's full context, and keeping all of
+    # them would grow the server's memory with every question
+    while len(sessions) > MAX_SESSIONS:
+        sessions.pop(next(iter(sessions)))
     queue: asyncio.Queue = asyncio.Queue()
     hooks = TraceHooks(sessions[run_id], queue.put_nowait)
 

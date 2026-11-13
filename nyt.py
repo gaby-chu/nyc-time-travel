@@ -10,6 +10,8 @@ import time
 
 import httpx
 
+from cache import BoundedCache
+
 SEARCH_URL = "https://api.nytimes.com/svc/search/v2/articlesearch.json"
 HEADERS = {"User-Agent": "nyc-time-travel/0.1 (Columbia IEOR 4570 class project)"}
 MAX_RESULTS = 5
@@ -19,7 +21,7 @@ MIN_INTERVAL = 12.0
 
 _lock = threading.Lock()
 _last_request = [0.0]
-_cache: dict[tuple, list[dict]] = {}
+_cache = BoundedCache(300)  # newest entries only: see cache.py
 
 
 # When the key's daily quota is used up, every request fails until it resets: stop asking for a while,

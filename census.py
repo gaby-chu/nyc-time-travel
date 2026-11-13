@@ -17,6 +17,8 @@ import time
 
 import httpx
 
+from cache import BoundedCache
+
 import geo
 
 API = "https://api.census.gov/data"
@@ -37,7 +39,7 @@ MAX_GROUPS = 15
 # coefficient of variation = (MOE / 1.645) / estimate, and 0.3 is the usual "use with caution" line.
 NOISY_CV = 0.3
 
-_cache: dict[str, object] = {}
+_cache = BoundedCache(200)  # newest entries only: see cache.py
 
 
 def _get_json(url: str, params: dict | None = None, key: bool = True):

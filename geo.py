@@ -19,6 +19,8 @@ from pathlib import Path
 
 import httpx
 
+from cache import BoundedCache
+
 HERE = Path(__file__).parent
 NTAS_FILE = HERE / "data" / "ntas.json"
 
@@ -39,7 +41,7 @@ BOROUGH_CODES = {"Manhattan": "1", "Bronx": "2", "Brooklyn": "3", "Queens": "4",
 NTA_TYPES = {"0": "neighborhood", "5": "rikers island", "6": "special use", "7": "cemetery",
              "8": "airport", "9": "park"}
 
-_cache: dict[str, object] = {}
+_cache = BoundedCache(200)  # newest entries only: see cache.py
 
 
 def _get_json(url: str, params: dict | None = None):

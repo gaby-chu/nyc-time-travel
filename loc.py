@@ -11,6 +11,8 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
 
+from cache import BoundedCache
+
 SEARCH_URL = "https://www.loc.gov/collections/chronicling-america/"
 HEADERS = {"User-Agent": "nyc-time-travel/0.1 (Columbia IEOR 4570 class project)"}
 MAX_RESULTS = 5
@@ -20,7 +22,7 @@ SNIPPET_CHARS = 300
 # Only NYC papers. The loc.gov facets are lowercase names.
 NYC_FACET = "location_state:new york|location_city:new york"
 
-_cache: dict[str, object] = {}
+_cache = BoundedCache(30)  # newest entries only: see cache.py
 
 
 def _get_json(url: str, params: dict | None = None):
