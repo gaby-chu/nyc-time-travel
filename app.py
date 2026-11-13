@@ -825,8 +825,13 @@ in this order and with exactly these headings (the page lays the report out by t
   car barn"), not "An item exists".
 - Who settled, and when: a table — Group | Arrived | Peak | Declined/moved | Evidence.
   Mark each date "(documented)" or "(approximate)", e.g. "1980s (approximate)"; when there is no
-  date, write just "Not found". Census figures count as evidence: a group the census shows today
-  goes in the table, with its share.
+  date, write just "Not found".
+  One row per community of people by origin (Dutch, Irish, Chinese, Puerto Rican, Koreans), never
+  per religion or institution: a Quaker meeting house or a Methodist church is evidence for the
+  community that built it (put it in that row's Evidence), not a row of its own.
+  Rows: the groups the question asks about, the groups the findings date, and the three or four
+  largest groups in today's census. Leave out a group whose only evidence is a small census share
+  (under 5%) with every date "Not found": mention it in the Today era instead.
 - What remains: surviving buildings, institutions, names, and what's gone.
 - What the records don't show: thin eras, missing groups, approximate census boundaries.
 - Every factual sentence and table row ends with a markdown link to the finding's source, named

@@ -71,9 +71,14 @@ function resetContext() {
 async function loadContext(sessionId) {
     const after = timeline ? timeline.seq : 0;
     const res = await fetch("/context?session_id=" + encodeURIComponent(sessionId) + "&after=" + after);
+    if (!res.ok) return; // a failed poll: keep what's shown, the next one may work
     const data = await res.json();
-    if (Array.isArray(data)) renderSingle(data);
-    else renderTimeline(data.events);
+    if (Array.isArray(data)) {
+        // A server that doesn't know this run answers [] (another instance, or one that restarted).
+        // Once notebooks are drawn, keep them rather than wiping them for an empty single context.
+        if (timeline) return;
+        renderSingle(data);
+    } else renderTimeline(data.events);
 }
 
 // --- One agent: the message list ---
