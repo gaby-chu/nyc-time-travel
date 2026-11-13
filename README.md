@@ -1,43 +1,60 @@
 # Neighborhood Time Machine
 
-Pick a New York City neighborhood and travel back through its records. Neighborhood Time Machine is a
-deep research agent: ask it what a neighborhood looked like around 1900–1920, 1940, 1960, 1980 and today,
-which immigrant communities settled there and when, or which of their buildings and institutions remain.
-It searches historical newspapers, the New York Times archive, the New York Public Library's digital
-collections, NYC landmark designation reports and the census, and writes a report where every fact
-links to the record it came from. Where the records are thin, it says so.
+## Description + Target Audience
+The Neighborhood Time Machine is a deep research agent: ask it what a neighborhood in NYC looked like around 1900–1920, 1940, 1960, 1980 and today, which immigrant communities settled there and when, or which of their buildings and institutions remain. It searches historical newspapers, the New York Times archive, the New York Public Library's digital
+collections, NYC landmark designation reports and the census, and writes a report where every fact links to the record it came from. If the records have little coverage of a specific time, it says so. 
 
-Built on the course's `wikipedia-deep-research` scaffold: FastAPI + the OpenAI Agents SDK + LiteLLM +
-Gemini on Vertex AI (`vertex_ai/gemini-3.5-flash` for the Clarifier, Lead and Writer;
+The Neighborhood Time Machine is built for anyone interested in the history of NYC, especially in the deeply immigrant influenced neighborhoods. It is for anyone curious about what their current neighborhood looked like throughout the 20th century until now and who may have lived on their block before them.
+
+It is built on FastAPI + the OpenAI Agents SDK + LiteLLM + Gemini on Vertex AI (`vertex_ai/gemini-3.5-flash` for the Clarifier, Lead and Writer;
 `vertex_ai/gemini-3.5-flash-lite` for the Researchers).
 
-## Use the deployed agent
+## How to use the deployed agent
 
-Open **TODO: Cloud Run URL** in a browser.
+Open https://nyc-time-travel-git-484339235648.europe-west1.run.app/ in a browser.
 
 - Type a question, or click one of the example questions under the box.
 - Name the neighborhood any way you like: official names ("Sunset Park"), informal ones ("Koreatown",
   "Little Germany"), or ones that mean several places ("Chinatown", "Little Italy"). If the name is
   ambiguous or the question is vague, the agent asks which you mean: click an option.
-- The page is laid out like a newspaper. While the agents work, **The Newsroom** shows one notebook per
-  agent (the editor, each reporter, the rewrite desk), side by side: its full context, filling in live.
-  Reporters who work in parallel open their notebooks at the same time. **The Wire**, beside the
-  notebooks, lists each agent's steps as they happen. A full run takes about 4 minutes and always
-  finishes within 5 (see [Limits](#sources-and-limits)).
 - The finished report goes to press as the front page: the overview as the lead story, with a lead
   picture. Below it is a timeline of the eras (Then & now), each in the style of its day. Then come the
   settlement table (Who settled, and when; "The Record"), what remains ("Still Standing") and what the
   records don't show ("Corrections & Omissions"). Every fact ends with a link to its source.
-- Pictures appear in the era that cites them, each linking to its page: NYPL photos and maps, the city's
-  ~1940 and ~1985 tax photos of buildings the report names, and scans of the newspaper pages the report
-  quotes. Only pictures the report cites are shown, since a search for a place name also finds other
-  places with the same name. An era with nothing in the records says so. A claim the citation check
-  couldn't verify is highlighted as "unverified".
-- Each notebook in the Newsroom also lists that agent's tool calls: click one to see its arguments and
-  result.
 
-Out of scope, and the agent says so: places outside the five boroughs; rents, real estate,
-gentrification and business turnover; genealogy and private individuals.
+
+## Data: sources, how to load it, and limits
+
+- **Old newspapers stop in 1954.** Chronicling America only has public-domain papers. For NYC that's
+  rich before 1923 (the Tribune, the Sun, the Evening World) and thin through the 1940s (some Yiddish
+  dailies, the Daily Worker). We checked: 208 NYC pages in 1953–54, none from 1955 on. For 1960, 1980 and
+  today the newspaper source is the NYT.
+- **The NYT search returns headlines, abstracts and snippets, not full text,** and many old articles have
+  only a headline. Its place tags exist only from 1981. The API allows about 500 requests a day, and a run
+  makes about 15–30, so heavy use runs out of quota.
+- **Census numbers start in 2000.** The 1990 long form isn't in the Census API, and the 2010 census didn't
+  ask about ancestry, birthplace or language. Tract boundaries change between decades, so older totals
+  for today's neighborhoods are approximate (the report says how well the tracts matched). ACS estimates
+  for small groups have large margins of error and are flagged. Census categories don't map neatly onto
+  how communities identify themselves: e.g. the ancestry table has no separate entry for most Asian and
+  Hispanic origins, so we use birthplace for those.
+- **Neighborhoods are 2020 NTAs.** A historic neighborhood like Koreatown is a few blocks of a larger NTA
+  (Midtown South), so its census figures cover the whole NTA; the report says so.
+- **NYPL's openly available material skews old**, and coverage of any one block is hit or miss.
+- **Landmark records only cover designated buildings and historic districts.** One district's report
+  (East Village/Lower East Side, LP-02491) is missing from the city's dataset; we link it by hand.
+- **Coverage varies a lot by neighborhood**, and the ~1960 era is thin almost everywhere. Thinly
+  documented places get thinner answers, by design.
+- **Historic sources reflect the biases of their time.** The agent reports what they show in neutral
+  terms and quotes offensive wording only where it's itself the evidence.
+- **The time limits trade some depth for speed.** A loc.gov newspaper search takes about 30 seconds,
+  and NYT requests are spaced 12 seconds apart on one shared key (the NYT's recommended pause), so a run
+  gets about 14 NYT searches. So that every answer arrives within 5
+  minutes, research stops 170 seconds into a run, each researcher gets at most 90 seconds before it
+  reports what it has, and the citation revision runs only if it still fits (otherwise failing claims
+  are marked "(unverified)" straight away). A test run took 236 seconds. On a day the archives are slow,
+  researchers find less. The NYT key also has a daily request limit: once it's used up, researchers
+  skip the NYT until it resets, and the reports lean on the other sources.
 
 ## Sample queries
 
@@ -232,97 +249,7 @@ the chosen option as the next `message` with the same `session_id`. `tool_calls`
 from every agent, each tagged with its `agent` ("Clarifier", "Lead", "Researcher 3", …). The page itself
 uses `GET /run`, which streams the same run as Server-Sent Events.
 
-## Evidence for the Deep Research requirements
 
-All runs below are on the code in this repo. Numbers are from the runs' logs.
-
-**Researchers fan out in parallel, in fresh contexts.** In the Little Italy run ("Who settled in Little
-Italy in Manhattan, and when?"), the Lead called `research` five times in one turn, and Researchers 1–5
-all started at 13.5 s, one per era (1900–1920, 1940, 1960, 1980, today), and ran at the same time: the
-first finished at 23.9 s and the last at 353.4 s. Each is a clone of the Researcher run with its own
-`Runner.run`, so each starts from an empty context with only its task. To watch this live, open the
-Newsroom during a run: each Researcher gets its own notebook, and they all open on the Lead's turn.
-
-**The Lead goes back for gaps.** In the same question's earlier run, round 1 found no population
-figures for 1940 or 1960. The Lead saved a timeline, then sent Researcher 6 with a gap task ("population
-counts, percentages of Italian-descent residents, or presence of other ethnic groups … during the 1940
-and 1960 census eras"), and saved the timeline again:
-
-| | After round 1 | After the gap round |
-| --- | --- | --- |
-| 1940, 1960 and 1980 eras | descriptions only | the same, plus "Exact population counts or percentage breakdowns are not found" |
-| Italians, decline | "declined rapidly after 1980; today 9.5% of NTA ancestry responses" | adds "by 2000, only 188 foreign-born Italian residents remained" (2000 Census) |
-
-The gap round found the 2000 figure and confirmed the pre-2000 gap, which the report then states. Since
-then, gap tasks must try something round 1 didn't (another source, other search words, another era)
-instead of repeating the same searches.
-
-**Vague and ambiguous questions get clarifying questions.** Clarifier output on the current code:
-
-| Question | Reply |
-| --- | --- |
-| "Tell me about immigrant neighborhoods" | "Which neighborhood would you like to explore?" Options: Lower East Side, Manhattan (MN0302); Jackson Heights, Queens (QN0301); Belmont, Bronx (BX0603); Sunset Park (West), Brooklyn (BK0702) |
-| "What was Little Italy like in 1910?" | "Which Little Italy would you like to explore?" Options: SoHo-Little Italy-Hudson Square, Manhattan (MN0201); Belmont, Bronx (BX0603) |
-| "Tell me the story of Chinatown" | Options: Chinatown-Two Bridges, Manhattan (MN0301); Sunset Park (Central), Brooklyn (BK0703); Flushing-Willets Point, Queens (QN0707) |
-| "What was the Latin Quarter in Paris like in 1900?" | Out of scope: "this app only researches the history of neighborhoods within the five boroughs", with NYC neighborhoods to try instead |
-| "How have rents changed in Bushwick since 2010?" | Out of scope: rents and displacement economics, with Bushwick history questions to try instead |
-
-**Citations are checked.** Citation check counts:
-
-| Run | First draft | After one revision |
-| --- | --- | --- |
-| Little Italy, run 1 | 11 claims, 19 links; 1 link to a URL no tool returned | 0 problems |
-| Little Italy, run 2 | 10 claims, 22 links; 0 problems (no revision needed) | |
-| Little Italy, run 3 | 25 claims, 41 links; 2 uncited claims | 24 claims, 43 links; 0 problems |
-| Sample 1, Little Germany | 62 claims, 81 links; 2 links to URLs no tool returned | 0 problems |
-| Sample 2, pushcart markets | 16 claims, 17 links; 0 problems (no revision needed) | |
-| Sample 3, Little Odessa | 52 claims, 57 links; 6 links to URLs no tool returned | 2 still failing, marked "(unverified)" |
-
-In sample 3, one of the two claims marked "(unverified)" links
-`https://www.nytimes.com/2022/07/19/dining/how-to-spend-a-day-in-brighton-beach`: the NYT search had
-returned that URL ending in `.html`, and the writer dropped the ending, so the link doesn't match any
-source found in the run. The limit: the check confirms that every cited source exists and was found in
-this run, not that it says exactly what the claim says.
-
-**It says what the data can't answer.** Every report ends with "What the records don't show". The
-pushcart report says the pages don't show how the markets changed after 1920, how vendor groups were
-spread across the neighborhood, or how many vendors worked without a license. The Brighton Beach report
-says the 1900-1920 newspapers cover the resort and its trains, not who lived there year-round. Little
-Italy's says exact population counts for the Italian community in 1940 and 1960 are absent from the
-searched archives.
-
-## Sources and limits
-
-- **Old newspapers stop in 1954.** Chronicling America only has public-domain papers. For NYC that's
-  rich before 1923 (the Tribune, the Sun, the Evening World) and thin through the 1940s (some Yiddish
-  dailies, the Daily Worker). We checked: 208 NYC pages in 1953–54, none from 1955 on. For 1960, 1980 and
-  today the newspaper source is the NYT.
-- **The NYT search returns headlines, abstracts and snippets, not full text,** and many old articles have
-  only a headline. Its place tags exist only from 1981. The API allows about 500 requests a day, and a run
-  makes about 15–30, so heavy use runs out of quota.
-- **Census numbers start in 2000.** The 1990 long form isn't in the Census API, and the 2010 census didn't
-  ask about ancestry, birthplace or language. Tract boundaries change between decades, so older totals
-  for today's neighborhoods are approximate (the report says how well the tracts matched). ACS estimates
-  for small groups have large margins of error and are flagged. Census categories don't map neatly onto
-  how communities identify themselves: e.g. the ancestry table has no separate entry for most Asian and
-  Hispanic origins, so we use birthplace for those.
-- **Neighborhoods are 2020 NTAs.** A historic neighborhood like Koreatown is a few blocks of a larger NTA
-  (Midtown South), so its census figures cover the whole NTA; the report says so.
-- **NYPL's openly available material skews old**, and coverage of any one block is hit or miss.
-- **Landmark records only cover designated buildings and historic districts.** One district's report
-  (East Village/Lower East Side, LP-02491) is missing from the city's dataset; we link it by hand.
-- **Coverage varies a lot by neighborhood**, and the ~1960 era is thin almost everywhere. Thinly
-  documented places get thinner answers, by design.
-- **Historic sources reflect the biases of their time.** The agent reports what they show in neutral
-  terms and quotes offensive wording only where it's itself the evidence.
-- **The time limits trade some depth for speed.** A loc.gov newspaper search takes about 30 seconds,
-  and NYT requests are spaced 12 seconds apart on one shared key (the NYT's recommended pause), so a run
-  gets about 14 NYT searches. So that every answer arrives within 5
-  minutes, research stops 170 seconds into a run, each researcher gets at most 90 seconds before it
-  reports what it has, and the citation revision runs only if it still fits (otherwise failing claims
-  are marked "(unverified)" straight away). A test run took 236 seconds. On a day the archives are slow,
-  researchers find less. The NYT key also has a daily request limit: once it's used up, researchers
-  skip the NYT until it resets, and the reports lean on the other sources.
 
 ## Run it locally
 
