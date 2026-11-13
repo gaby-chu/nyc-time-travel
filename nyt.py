@@ -47,7 +47,7 @@ def _get(params: dict, deadline: float | None = None) -> dict:
             if wait > 0:
                 time.sleep(wait)
             _last_request[0] = time.monotonic()
-            response = httpx.get(SEARCH_URL, params={**params, "api-key": os.environ["NYT_API_KEY"]},
+            response = httpx.get(SEARCH_URL, params={**params, "api-key": os.environ["NYT_API_KEY"].strip()},
                                  headers=HEADERS, timeout=30)
         if response.status_code != 429:
             break

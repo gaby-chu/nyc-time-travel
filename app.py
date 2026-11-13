@@ -824,7 +824,9 @@ in this order and with exactly these headings (the page lays the report out by t
   leave out views of other parts of the borough. Name it plainly ("a 1936 photo of the Third Avenue
   car barn"), not "An item exists".
 - Who settled, and when: a table — Group | Arrived | Peak | Declined/moved | Evidence.
-  Mark each date "documented", "approximate", or "not found".
+  Mark each date "(documented)" or "(approximate)", e.g. "1980s (approximate)"; when there is no
+  date, write just "Not found". Census figures count as evidence: a group the census shows today
+  goes in the table, with its share.
 - What remains: surviving buildings, institutions, names, and what's gone.
 - What the records don't show: thin eras, missing groups, approximate census boundaries.
 - Every factual sentence and table row ends with a markdown link to the finding's source, named
@@ -857,10 +859,65 @@ def check_report(report: str, state: Research) -> dict:
     return {"failing": list(failing.values()), "problems": problems, "counts": counts}
 
 
+BARE_URL = re.compile(r"(?<!\]\()(?<![<(])\bhttps?://[^\s)<>\]\"']+")
+SOURCE_NAMES = {"s-media.nyc.gov": "Landmarks Preservation Commission", "www.nytimes.com": "New York Times",
+                "www.loc.gov": "Chronicling America", "digitalcollections.nypl.org": "NYPL Digital Collections",
+                "data.census.gov": "Census Bureau", "data.cityofnewyork.us": "NYC Open Data",
+                "nycrecords.access.preservica.com": "NYC Municipal Archives"}
+
+
+def link_bare_urls(text: str) -> str:
+    """Researchers cite sources as bare URLs: make each a markdown link named after its source."""
+    def link(m):
+        url = m.group(0).rstrip(".,;:")
+        host = url.split("/")[2]
+        return f"[{SOURCE_NAMES.get(host, host)}]({url})" + m.group(0)[len(url):]
+    return BARE_URL.sub(link, text)
+
+
+FINDING_HEAD = re.compile(r"^(Researcher \d+) \(([^,]+), ([^)]+)\): (.*)$", re.MULTILINE)
+
+
+def findings_report(state: Research) -> str:
+    """The report when the Writer can't finish in time: the researchers' own cited findings, by era,
+    under the headings the page lays out. Plainer than the Writer's, but every bullet keeps its link."""
+    by_era: dict[str, list[str]] = {}
+    for finding in state.findings:
+        head = FINDING_HEAD.match(finding)
+        era = head.group(3) if head else "Other"
+        by_era.setdefault(era, []).append(link_bare_urls(finding.split("\n\n", 1)[-1].strip()))
+    order = [e for e in ERAS if e in by_era] + [e for e in by_era if e not in ERAS]
+    parts = ["## Overview\n\nThe write-up ran out of time, so these are the researchers' findings as they "
+             "filed them, by era. Each one links to its source.", "## Then & now"]
+    parts += [f"### {era if era != 'today' else 'Today'}\n\n" + "\n".join(by_era[era]) for era in order]
+    parts.append("## What the records don't show\n\nThe findings above weren't combined into a single "
+                 "account, so gaps between eras aren't summarized here. Bullets saying a search found "
+                 "nothing are the gaps the researchers reported.")
+    return "\n\n".join(parts)
+
+
+async def write_in_time(prompt: str, state: Research) -> str | None:
+    """One Writer run, or None if it can't finish before RUN_SECONDS (Vertex is sometimes slow)."""
+    left = max(RUN_SECONDS - state.elapsed(), 30)
+    try:
+        result = await asyncio.wait_for(
+            Runner.run(writer, prompt, context=state, hooks=state.hooks, max_turns=2), timeout=left)
+        return str(result.final_output)
+    except TimeoutError:
+        return None
+
+
 async def write_and_check(prompt: str, state: Research) -> str:
     """Python, not an agent, runs this loop: write, check, one revision with the problems listed,
-    check again, and mark whatever still fails as (unverified)."""
-    report = str((await Runner.run(writer, prompt, context=state, hooks=state.hooks, max_turns=2)).final_output)
+    check again, and mark whatever still fails as (unverified). If the Writer can't finish within
+    the 5 minutes, the researchers' findings go out instead."""
+    report = await write_in_time(prompt, state)
+    if report is None:
+        state.hooks.activity("Writer", "ran out of time: sending the researchers' findings instead")
+        report = findings_report(state)
+        found = check_report(report, state)
+        state.checks.append(found["counts"])
+        return checker.mark_unverified(report, found["failing"])
     first = check_report(report, state)
     state.checks.append(first["counts"])
     state.hooks.activity("Citation check", f"first check: {first['counts']}")
@@ -875,7 +932,11 @@ async def write_and_check(prompt: str, state: Research) -> str:
     revision = (f"{prompt}\n\nYour report:\n\n{report}\n\nA citation check found these problems:\n{problems}\n\n"
                 "Revise the report: fix each problem by citing the right source from the findings, "
                 "or cut the claim. Keep everything else as it is. Reply with the whole report.")
-    report = str((await Runner.run(writer, revision, context=state, hooks=state.hooks, max_turns=2)).final_output)
+    revised = await write_in_time(revision, state)
+    if revised is None:
+        state.hooks.activity("Citation check", "the revision ran out of time: marking what fails as unverified")
+        return checker.mark_unverified(report, first["failing"])
+    report = revised
     final = check_report(report, state)
     state.checks.append(final["counts"])
     state.hooks.activity("Citation check", f"after revision: {final['counts']}")

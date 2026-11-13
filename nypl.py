@@ -31,7 +31,7 @@ def _get_json(url: str, params: dict | None = None) -> dict:
         return _cache[key]
     if not os.environ.get("NYPL_API_KEY"):
         raise RuntimeError("Set NYPL_API_KEY in this project's .env file.")
-    headers = {**HEADERS, "Authorization": f'Token token="{os.environ["NYPL_API_KEY"]}"'}
+    headers = {**HEADERS, "Authorization": f'Token token="{os.environ["NYPL_API_KEY"].strip()}"'}
     for attempt in range(3):
         response = httpx.get(url, params=params, headers=headers, timeout=30)
         if response.status_code < 500 or attempt == 2:

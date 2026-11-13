@@ -60,7 +60,9 @@ To load it: it's plain JSON keyed by NTA code (`json.load(open("data/ntas.json")
   and NYT requests are spaced 12 seconds apart (the NYT's recommended pause), so a run gets about 14 NYT searches. So that every answer arrives within 5
   minutes, research stops 170 seconds into a run, each researcher gets at most 90 seconds before it
   reports what it has, and the citation revision runs only if it still fits (otherwise failing claims
-  are marked "(unverified)" straight away). The NYT key also has a daily request limit: once it's used up, researchers
+  are marked "(unverified)" straight away). If the Writer itself is slow (Vertex sometimes is), the page
+  gets the researchers' cited findings by era instead of a written report, so an answer still arrives
+  in time. The NYT key also has a daily request limit: once it's used up, researchers
   skip the NYT until it resets, and the reports lean on the other sources.
   
 

@@ -46,7 +46,7 @@ def _get_json(url: str, params: dict | None = None, key: bool = True):
         return _cache[cache_key]
     if key and not os.environ.get("CENSUS_API_KEY"):
         raise RuntimeError("Set CENSUS_API_KEY in this project's .env file.")
-    full = {**(params or {}), **({"key": os.environ["CENSUS_API_KEY"]} if key else {})}
+    full = {**(params or {}), **({"key": os.environ["CENSUS_API_KEY"].strip()} if key else {})}
     for attempt in range(3):
         response = httpx.get(url, params=full, headers=HEADERS, timeout=60, follow_redirects=True)
         if response.status_code < 500 or attempt == 2:
