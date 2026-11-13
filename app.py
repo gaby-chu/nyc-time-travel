@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import json
 import os
 import re
@@ -161,6 +162,23 @@ def out_of_time(ctx: RunContextWrapper[Research]) -> str | None:
     return "Time's up: no more searches or reads. Reply with your findings now, from what you already have."
 
 
+_archive_pool = concurrent.futures.ThreadPoolExecutor(max_workers=32)
+
+
+def budgeted(ctx: RunContextWrapper[Research], fn, *args):
+    """fn(*args), but give up when the calling researcher's time runs out: a slow archive call already
+    in progress would otherwise hold up the whole round. The abandoned call finishes in the background."""
+    agent = getattr(ctx, "agent", None)
+    started = ctx.context.started.get(agent.name) if agent else None
+    if started is None:  # not a researcher: no limit
+        return fn(*args)
+    left = max(RESEARCHER_SECONDS - (time.monotonic() - started), 0) + 5
+    try:
+        return _archive_pool.submit(fn, *args).result(timeout=left)
+    except concurrent.futures.TimeoutError:
+        raise TimeoutError("this source was too slow and your time ran out. Reply with your findings now.") from None
+
+
 def read_allowed(ctx: RunContextWrapper[Research]) -> str | None:
     """Count one read for the calling researcher. Returns a refusal once it has read MAX_READS or is out of time."""
     if late := out_of_time(ctx):
@@ -211,7 +229,7 @@ def census_profile(ctx: RunContextWrapper[Research], nta_code: str, year: int, t
     if late := out_of_time(ctx):
         return late
     try:
-        return remember(ctx, census.to_text(census.profile(nta_code, year, topic)))
+        return remember(ctx, census.to_text(budgeted(ctx, census.profile, nta_code, year, topic)))
     except Exception as e:
         return failed(f"Census {topic} {year} for {nta_code}", e)
 
@@ -237,7 +255,7 @@ def search_old_newspapers(ctx: RunContextWrapper[Research], terms: str, start_ye
     terms, note = without_years(terms)
     try:
         end = min(end_year, LAST_OLD_NEWSPAPER_YEAR)
-        pages = loc.search(terms, start_year, end)
+        pages = budgeted(ctx, loc.search, terms, start_year, end)
         # The page shows a scan of each newspaper page next to the era it's from
         ctx.context.thumbnails.update({p["url"]: {"image": p["image"], "large": p["large"], "kind": "page",
                                                   "caption": f"{p['paper']}, {p['date']}", "date": p["date"]}
@@ -259,7 +277,7 @@ def read_old_newspaper_page(ctx: RunContextWrapper[Research], url: str, terms: s
     if refusal := read_allowed(ctx):
         return refusal
     try:
-        return remember(ctx, loc.page_to_text(loc.read_page(url, terms)))
+        return remember(ctx, loc.page_to_text(budgeted(ctx, loc.read_page, url, terms)))
     except Exception as e:
         return failed(f"Reading {url}", e)
 
@@ -290,10 +308,10 @@ def search_nyt(ctx: RunContextWrapper[Research], query: str, start_year: int, en
     query, years_note = without_years(query)
     note += years_note
     try:
-        articles = nyt.search(query, start_year, end_year, place)
+        articles = budgeted(ctx, nyt.search, query, start_year, end_year, place)
         if not articles and place:
             # A tag the NYT doesn't use finds nothing: try the words alone
-            articles = nyt.search(query, start_year, end_year)
+            articles = budgeted(ctx, nyt.search, query, start_year, end_year)
             note += f"(No articles have the place tag {place!r}, so this searched without it.)\n\n"
         return remember(ctx, note + nyt.to_text(articles))
     except Exception as e:
@@ -317,7 +335,7 @@ def search_nypl(ctx: RunContextWrapper[Research], query: str, start_year: int | 
         return late
     query, note = without_years(query)
     try:
-        items = nypl.search(query, start_year, end_year)
+        items = budgeted(ctx, nypl.search, query, start_year, end_year)
         # The model doesn't need image URLs; the page shows each photo or map in the era it's from
         # (t=r is ~300 px; t=w, ~760 px, for the front page's lead picture)
         ctx.context.thumbnails.update({i["url"]: {"image": i["thumbnail"], "large": i["thumbnail"].replace("&t=r", "&t=w"),
@@ -340,7 +358,7 @@ def search_landmarks(ctx: RunContextWrapper[Research], nta_code: str, keyword: s
     if late := out_of_time(ctx):
         return late
     try:
-        return remember(ctx, lpc.search_to_text(lpc.search_landmarks(nta_code, keyword)))
+        return remember(ctx, lpc.search_to_text(budgeted(ctx, lpc.search_landmarks, nta_code, keyword)))
     except Exception as e:
         return failed(f"Searching landmarks in {nta_code}", e)
 
@@ -358,7 +376,7 @@ def read_landmark_report(ctx: RunContextWrapper[Research], url: str, terms: str)
     if refusal := read_allowed(ctx):
         return refusal
     try:
-        return remember(ctx, lpc.report_to_text(lpc.read_landmark_report(url, terms)))
+        return remember(ctx, lpc.report_to_text(budgeted(ctx, lpc.read_landmark_report, url, terms)))
     except Exception as e:
         return failed(f"Reading {url}", e)
 
@@ -374,7 +392,7 @@ def tax_photo_links(ctx: RunContextWrapper[Research], address: str) -> str:
     if late := out_of_time(ctx):
         return late
     try:
-        links = geo.tax_photo_links(address)
+        links = budgeted(ctx, geo.tax_photo_links, address)
         place = links["address"] or address
         lines = [f"# Tax photos of {place} (block {links['block']}, lot {links['lot']})"]
         for year in ("1940", "1985"):

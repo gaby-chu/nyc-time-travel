@@ -320,7 +320,8 @@ searched archives.
 - **It's slow, and the time limit trades some depth for speed.** A loc.gov newspaper search takes about
   30 seconds, and NYT requests are spaced 6 seconds apart on one shared key. Each researcher gets 90
   seconds, then reports what it has, so a full run takes about 5 minutes; on a day the archives are slow,
-  researchers find less.
+  researchers find less. The NYT key also has a daily request limit: once it's used up, researchers
+  skip the NYT until it resets, and the reports lean on the other sources.
 
 ## Run it locally
 

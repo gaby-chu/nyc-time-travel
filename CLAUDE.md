@@ -97,8 +97,12 @@ build or infrastructure files the reference doesn't have. Two sibling examples e
     (`Researcher 3`), runs it with `Runner.run` in a **fresh context**, appends findings to shared
     state. Several `research` calls in one Lead turn run concurrently.
   - Each researcher has `RESEARCHER_SECONDS` (90): after that every research tool answers "time's up"
-    and it reports what it has (`out_of_time`). The Lead waits for a round's slowest researcher, so this
-    is what keeps a run near 5 minutes. loc.gov calls give up after 2 tries of 20 s.
+    and it reports what it has (`out_of_time`), and a call already in progress is abandoned when the
+    time runs out (`budgeted`). The Lead waits for a round's slowest researcher, so this is what keeps a
+    run near 5 minutes. loc.gov calls give up after 2 tries of 20 s. When the NYT key's daily quota is
+    used up ("QuotaViolation"), nyt.py stops calling for 15 minutes instead of retrying.
+  - Error text goes to the model, the page and /chat: `redact()` strips API keys (they're URL
+    parameters for the NYT and Census) from every error message. Keep using `failed()`/`error_text()`.
   - Lead: plan → `research` ×N in the same turn → check gaps → more `research` (capped) → `DONE`.
   - Writer: sees only the question + findings (+ shared timeline); keeps links; bans filler words.
   - FastAPI: `/` serves `index.html`; `/run` streams SSE from a queue fed by hooks; cancels on disconnect.
