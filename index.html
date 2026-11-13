@@ -1552,8 +1552,13 @@
 
                 // The front page's lead picture: a photo the overview cites, else any cited photo, else a cited newspaper page
                 const inLead = new Set([...$("lead").querySelectorAll("a[href]")].map((a) => normalize(a.getAttribute("href"))));
-                const lead = items.find((i) => i.kind !== "page" && inLead.has(normalize(i.url))) || items.find((i) => i.kind !== "page") || items[0];
-                showLeadArt(lead);
+                // In that order; if one won't load, the next is tried
+                const leads = [
+                    ...items.filter((i) => i.kind !== "page" && inLead.has(normalize(i.url))),
+                    ...items.filter((i) => i.kind !== "page"),
+                    ...items,
+                ].filter((item, n, all) => all.indexOf(item) === n);
+                showLeadArt(leads);
 
                 // Every other picture goes in the era article that cites it, or else the one for its date;
                 // the rest go to the photo desk
@@ -1574,13 +1579,22 @@
                 $("photo-desk").hidden = !rest.length;
             }
 
-            function showLeadArt(item) {
+            // candidates: pictures in order of preference (or one, or null). If a picture's large version won't
+            // load, its small one is tried, then the next picture; if none load, the front page goes without.
+            function showLeadArt(candidates) {
+                const queue = [].concat(candidates || []);
+                const item = queue.shift();
                 const figure = $("lead-art");
                 figure.hidden = !item;
                 $("front-body").classList.toggle("has-art", !!item);
                 if (!item) return figure.replaceChildren();
                 const link = Object.assign(document.createElement("a"), { href: item.url, target: "_blank", rel: "noopener" });
-                link.appendChild(Object.assign(document.createElement("img"), { src: item.large || item.image, alt: item.caption }));
+                const img = Object.assign(document.createElement("img"), { src: item.large || item.image, alt: item.caption });
+                img.onerror = () => {
+                    if (item.image && img.src !== item.image) img.src = item.image;
+                    else showLeadArt(queue);
+                };
+                link.appendChild(img);
                 const caption = el("figcaption", "", item.kind === "page" ? `A page from the ${item.caption}` : item.caption);
                 caption.appendChild(el("span", "credit", item.credit || (item.kind === "page" ? "Library of Congress, Chronicling America" : "New York Public Library Digital Collections")));
                 link.appendChild(caption);
