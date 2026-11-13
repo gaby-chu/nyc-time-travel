@@ -48,12 +48,20 @@ MAX_RESEARCHERS = 10
 MAX_ROUNDS = 3
 MAX_READS = 5
 # Each researcher gets at most this many searches of each slow source: loc.gov takes ~30 s a search,
-# and NYT requests queue 6 s apart on one shared key, so one researcher's extra searches hold up the round.
+# and NYT requests queue 12 s apart on one shared key, so one researcher's extra searches hold up the round.
 MAX_SEARCHES = 3
 # Each researcher gets this long. After it, every tool answers "time's up" and the researcher reports what
 # it has. The Lead waits for the slowest researcher in a round, so one stuck on a slow archive held up the
 # whole round (a 10-minute run became about 5).
 RESEARCHER_SECONDS = 90
+# The whole answer has to arrive within 5 minutes (graders wait that long). Research stops RESEARCH_SECONDS
+# into the run, leaving the Writer ~50-100 s and usually time for one revision; a researcher gets 90 s or what's left of that, whichever is
+# less, and no new round starts with under MIN_ROUND_SECONDS left. The citation revision (~40 s) runs only
+# if it still fits in RUN_SECONDS; otherwise failing claims are marked "(unverified)" straight away.
+RUN_SECONDS = 285
+RESEARCH_SECONDS = 170
+MIN_ROUND_SECONDS = 40
+REVISION_SECONDS = 45
 # Chronicling America has no NYC pages after 1954 (checked: 208 pages in 1953-54, none from 1955 on)
 LAST_OLD_NEWSPAPER_YEAR = 1954
 
@@ -77,7 +85,14 @@ class Research:
     round_turn: int = -1  # the Lead turn the latest round started in
     reads: dict[str, int] = field(default_factory=dict)  # researcher -> pages and reports read
     searches: dict[str, int] = field(default_factory=dict)  # "researcher:tool" -> searches made
-    started: dict[str, float] = field(default_factory=dict)  # researcher -> time.monotonic() when it started
+    deadlines: dict[str, float] = field(default_factory=dict)  # researcher -> time.monotonic() its time runs out
+    run_started: float = field(default_factory=time.monotonic)
+
+    def elapsed(self) -> float:
+        return time.monotonic() - self.run_started
+
+    def research_time_left(self) -> float:
+        return RESEARCH_SECONDS - self.elapsed()
     findings: list[str] = field(default_factory=list)  # what each researcher reported, for the Writer
     plan: list[dict] = field(default_factory=list)
     timeline: dict = field(default_factory=dict)  # {"groups": [...], "eras": [...]}
@@ -156,8 +171,8 @@ def failed(what: str, e: Exception) -> str:
 def out_of_time(ctx: RunContextWrapper[Research]) -> str | None:
     """A refusal once the calling researcher has used its RESEARCHER_SECONDS, else None."""
     agent = getattr(ctx, "agent", None)
-    started = ctx.context.started.get(agent.name) if agent else None
-    if started is None or time.monotonic() - started < RESEARCHER_SECONDS:
+    deadline = ctx.context.deadlines.get(agent.name) if agent else None
+    if deadline is None or time.monotonic() < deadline:
         return None
     return "Time's up: no more searches or reads. Reply with your findings now, from what you already have."
 
@@ -165,14 +180,20 @@ def out_of_time(ctx: RunContextWrapper[Research]) -> str | None:
 _archive_pool = concurrent.futures.ThreadPoolExecutor(max_workers=32)
 
 
+def deadline_of(ctx: RunContextWrapper[Research]) -> float | None:
+    """The calling researcher's deadline (time.monotonic()), or None if it isn't a researcher."""
+    agent = getattr(ctx, "agent", None)
+    return ctx.context.deadlines.get(agent.name) if agent else None
+
+
 def budgeted(ctx: RunContextWrapper[Research], fn, *args):
     """fn(*args), but give up when the calling researcher's time runs out: a slow archive call already
     in progress would otherwise hold up the whole round. The abandoned call finishes in the background."""
     agent = getattr(ctx, "agent", None)
-    started = ctx.context.started.get(agent.name) if agent else None
-    if started is None:  # not a researcher: no limit
+    deadline = ctx.context.deadlines.get(agent.name) if agent else None
+    if deadline is None:  # not a researcher: no limit
         return fn(*args)
-    left = max(RESEARCHER_SECONDS - (time.monotonic() - started), 0) + 5
+    left = max(deadline - time.monotonic(), 0) + 5
     try:
         return _archive_pool.submit(fn, *args).result(timeout=left)
     except concurrent.futures.TimeoutError:
@@ -308,10 +329,10 @@ def search_nyt(ctx: RunContextWrapper[Research], query: str, start_year: int, en
     query, years_note = without_years(query)
     note += years_note
     try:
-        articles = budgeted(ctx, nyt.search, query, start_year, end_year, place)
+        articles = budgeted(ctx, nyt.search, query, start_year, end_year, place, deadline_of(ctx))
         if not articles and place:
             # A tag the NYT doesn't use finds nothing: try the words alone
-            articles = budgeted(ctx, nyt.search, query, start_year, end_year)
+            articles = budgeted(ctx, nyt.search, query, start_year, end_year, None, deadline_of(ctx))
             note += f"(No articles have the place tag {place!r}, so this searched without it.)\n\n"
         return remember(ctx, note + nyt.to_text(articles))
     except Exception as e:
@@ -627,8 +648,10 @@ You research one task about one NYC neighborhood in one era, using the tools you
 
 
 def research_left(ctx: RunContextWrapper[Research], agent) -> bool:
-    """research disappears from the Lead's tools once the rounds or the researchers run out."""
-    return ctx.context.rounds < MAX_ROUNDS and ctx.context.researchers < MAX_RESEARCHERS
+    """research disappears from the Lead's tools once the rounds, the researchers or the time run out."""
+    state = ctx.context
+    return (state.rounds < MAX_ROUNDS and state.researchers < MAX_RESEARCHERS
+            and state.research_time_left() >= MIN_ROUND_SECONDS)
 
 
 @function_tool(is_enabled=research_left, failure_error_function=tool_error)
@@ -645,7 +668,7 @@ async def research(ctx: RunContextWrapper[Research], task: str, era: str, questi
     """
     state = ctx.context
     if state.round_turn != state.lead_turns:  # the first research call of this Lead turn
-        if state.rounds >= MAX_ROUNDS:
+        if state.rounds >= MAX_ROUNDS or state.research_time_left() < MIN_ROUND_SECONDS:
             return "No researchers left. Reply DONE."
         state.rounds += 1
         state.round_turn = state.lead_turns
@@ -655,7 +678,7 @@ async def research(ctx: RunContextWrapper[Research], task: str, era: str, questi
     # Written out so each run gets a numbered copy, and its own column in the context panel.
     state.researchers += 1
     agent = researcher.clone(name=f"Researcher {state.researchers}")
-    state.started[agent.name] = time.monotonic()
+    state.deadlines[agent.name] = time.monotonic() + min(RESEARCHER_SECONDS, max(state.research_time_left(), 15))
     start, end = ERAS.get(era, (1850, 2026))
     nta = state.nta
     prompt = (f"Neighborhood: {nta['name']}, {nta['borough']} (NTA {nta['code']}, "
@@ -787,18 +810,22 @@ def check_report(report: str, state: Research) -> dict:
 async def write_and_check(prompt: str, state: Research) -> str:
     """Python, not an agent, runs this loop: write, check, one revision with the problems listed,
     check again, and mark whatever still fails as (unverified)."""
-    report = str((await Runner.run(writer, prompt, context=state, hooks=state.hooks)).final_output)
+    report = str((await Runner.run(writer, prompt, context=state, hooks=state.hooks, max_turns=2)).final_output)
     first = check_report(report, state)
     state.checks.append(first["counts"])
     state.hooks.activity("Citation check", f"first check: {first['counts']}")
     if not first["failing"]:
         return report
+    if state.elapsed() > RUN_SECONDS - REVISION_SECONDS:
+        # No time for a revision: the answer has to arrive within 5 minutes
+        state.hooks.activity("Citation check", "no time for a revision: marking what fails as unverified")
+        return checker.mark_unverified(report, first["failing"])
 
     problems = "\n".join(f"- {p}" for p in first["problems"])
     revision = (f"{prompt}\n\nYour report:\n\n{report}\n\nA citation check found these problems:\n{problems}\n\n"
                 "Revise the report: fix each problem by citing the right source from the findings, "
                 "or cut the claim. Keep everything else as it is. Reply with the whole report.")
-    report = str((await Runner.run(writer, revision, context=state, hooks=state.hooks)).final_output)
+    report = str((await Runner.run(writer, revision, context=state, hooks=state.hooks, max_turns=2)).final_output)
     final = check_report(report, state)
     state.checks.append(final["counts"])
     state.hooks.activity("Citation check", f"after revision: {final['counts']}")
@@ -841,7 +868,12 @@ async def deep_research(question: str, hooks: PanelHooks, asked: str | None = No
 
     # 1. Research: plan, fan out, check for gaps
     try:
-        await Runner.run(lead, f"Question: {question}\n{about}", context=research_run, hooks=hooks, max_turns=15)
+        # Backstop: researchers stop on their own by RESEARCH_SECONDS; this stops a Lead that keeps going
+        await asyncio.wait_for(
+            Runner.run(lead, f"Question: {question}\n{about}", context=research_run, hooks=hooks, max_turns=15),
+            timeout=max(research_run.research_time_left(), 0) + 30)
+    except TimeoutError:
+        hooks.activity("Lead", "ran out of research time. Writing up the findings.")
     except (ModelBehaviorError, MaxTurnsExceeded) as e:
         # Once the rounds run out, research is gone from the Lead's tools, but the model sometimes
         # calls it anyway, which the SDK treats as fatal. Either way the research is over: write it up.
@@ -849,6 +881,8 @@ async def deep_research(question: str, hooks: PanelHooks, asked: str | None = No
             raise
         if isinstance(e, MaxTurnsExceeded):
             reason = "used all its turns"
+        elif research_run.research_time_left() < MIN_ROUND_SECONDS:
+            reason = "asked for more research after the research time ran out"
         elif research_run.researchers >= MAX_RESEARCHERS:
             reason = f"asked for more research after all {MAX_RESEARCHERS} researchers were used"
         else:

@@ -98,8 +98,10 @@ build or infrastructure files the reference doesn't have. Two sibling examples e
     state. Several `research` calls in one Lead turn run concurrently.
   - Each researcher has `RESEARCHER_SECONDS` (90): after that every research tool answers "time's up"
     and it reports what it has (`out_of_time`), and a call already in progress is abandoned when the
-    time runs out (`budgeted`). The Lead waits for a round's slowest researcher, so this is what keeps a
-    run near 5 minutes. loc.gov calls give up after 2 tries of 20 s. When the NYT key's daily quota is
+    time runs out (`budgeted`). The Lead waits for a round's slowest researcher.
+  - Graders wait at most 5 minutes per answer: `RESEARCH_SECONDS` (170) ends research (no new round with
+    under 40 s left; the Lead has a backstop timeout), and the citation revision runs only before
+    `RUN_SECONDS - REVISION_SECONDS`. The Writer has `max_turns=2`. A test run: 236 s. loc.gov calls give up after 2 tries of 20 s. When the NYT key's daily quota is
     used up ("QuotaViolation"), nyt.py stops calling for 15 minutes instead of retrying.
   - Error text goes to the model, the page and /chat: `redact()` strips API keys (they're URL
     parameters for the NYT and Census) from every error message. Keep using `failed()`/`error_text()`.
@@ -166,7 +168,8 @@ Landmarks records: whole life of designated buildings & historic districts ─�
 - `GET https://api.nytimes.com/svc/search/v2/articlesearch.json?q=<q>&fq=<filter>&begin_date=YYYYMMDD&end_date=YYYYMMDD&page=<n>&api-key=$NYT_API_KEY`
 - Coverage: Sept 1851 → today. Returns headline, abstract, lead paragraph, pub_date, web_url,
   keywords (incl. geographic tags) — **not full text**. Cite `web_url`; quote only abstract/lead text.
-- Rate limits: about **10 requests/minute, 4,000/day** — **VERIFY**. Implement a shared async
+- Rate limits: the NYT asks for a **12-second pause** between requests (5/minute, ~500/day); nyt.py spaces
+  them 12 s apart and drops a queued request that would wait past its researcher's deadline. Implement a shared async
   rate limiter + cache, since parallel researchers will contend for it.
 - Use `fq` with geographic keywords (e.g. `glocations:("Chinatown (Manhattan, NY)")`) — **VERIFY** syntax.
 
@@ -378,9 +381,8 @@ No eval suite is required for this path, but the README must show evidence for e
   ("Little Italy") returning options; one out-of-scope request handled politely.
 - **Accurate citations:** citation-check counts on the demo runs (first check vs after revision); an
   example of a claim marked unverified; the limit in §6 (existence, not meaning).
-- **States what data can't answer:** a thinly documented neighborhood run with an honest gaps section.
-- Demo set (6–8 neighborhoods): mix of well-documented (e.g. Lower East Side, Chinatown, Little Italy)
-  and thinner ones (e.g. a Queens or Staten Island neighborhood), across all three question types.
+- **States what data can't answer:** the sample reports' "What the records don't show" sections. No
+  separate thin-neighborhood run or 6–8 neighborhood demo set: not in the assignment (user's choice).
 - Sources and their limits (§12), and the note that GeoSearch/NTA lookups/tax-photo links are helpers.
 
 ---

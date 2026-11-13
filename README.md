@@ -22,8 +22,8 @@ Open **TODO: Cloud Run URL** in a browser.
 - The page is laid out like a newspaper. While the agents work, **The Newsroom** shows one notebook per
   agent (the editor, each reporter, the rewrite desk), side by side: its full context, filling in live.
   Reporters who work in parallel open their notebooks at the same time. **The Wire**, beside the
-  notebooks, lists each agent's steps as they happen. A full run takes about 5 minutes (it waits on slow
-  archives; see [Limits](#sources-and-limits)).
+  notebooks, lists each agent's steps as they happen. A full run takes about 4 minutes and always
+  finishes within 5 (see [Limits](#sources-and-limits)).
 - The finished report goes to press as the front page: the overview as the lead story, with a lead
   picture. Below it is a timeline of the eras (Then & now), each in the style of its day. Then come the
   settlement table (Who settled, and when; "The Record"), what remains ("Still Standing") and what the
@@ -315,9 +315,12 @@ searched archives.
   documented places get thinner answers, by design.
 - **Historic sources reflect the biases of their time.** The agent reports what they show in neutral
   terms and quotes offensive wording only where it's itself the evidence.
-- **It's slow, and the time limit trades some depth for speed.** A loc.gov newspaper search takes about
-  30 seconds, and NYT requests are spaced 6 seconds apart on one shared key. Each researcher gets 90
-  seconds, then reports what it has, so a full run takes about 5 minutes; on a day the archives are slow,
+- **The time limits trade some depth for speed.** A loc.gov newspaper search takes about 30 seconds,
+  and NYT requests are spaced 12 seconds apart on one shared key (the NYT's recommended pause), so a run
+  gets about 14 NYT searches. So that every answer arrives within 5
+  minutes, research stops 170 seconds into a run, each researcher gets at most 90 seconds before it
+  reports what it has, and the citation revision runs only if it still fits (otherwise failing claims
+  are marked "(unverified)" straight away). A test run took 236 seconds. On a day the archives are slow,
   researchers find less. The NYT key also has a daily request limit: once it's used up, researchers
   skip the NYT until it resets, and the reports lean on the other sources.
 

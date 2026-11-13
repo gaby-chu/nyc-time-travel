@@ -13,9 +13,9 @@ import httpx
 SEARCH_URL = "https://api.nytimes.com/svc/search/v2/articlesearch.json"
 HEADERS = {"User-Agent": "nyc-time-travel/0.1 (Columbia IEOR 4570 class project)"}
 MAX_RESULTS = 5
-# The API allows about 10 requests a minute. Researchers run in parallel threads and share this key,
-# so every request waits its turn here: one every 6 seconds across the whole process.
-MIN_INTERVAL = 6.0
+# The NYT asks for a 12-second pause between requests (5 a minute, 500 a day). Researchers run in parallel
+# threads and share this key, so every request waits its turn here: one every 12 s across the whole process.
+MIN_INTERVAL = 12.0
 
 _lock = threading.Lock()
 _last_request = [0.0]
@@ -32,7 +32,9 @@ class QuotaExceeded(RuntimeError):
     pass
 
 
-def _get(params: dict) -> dict:
+def _get(params: dict, deadline: float | None = None) -> dict:
+    """deadline: a time.monotonic() after which the caller no longer wants the answer. A request that
+    would have to wait in the queue past it is dropped without being sent, so it costs no quota."""
     if not os.environ.get("NYT_API_KEY"):
         raise RuntimeError("Set NYT_API_KEY in this project's .env file.")
     for attempt in range(2):
@@ -40,6 +42,8 @@ def _get(params: dict) -> dict:
             raise QuotaExceeded("The NYT key's daily request limit is used up. Use other sources.")
         with _lock:
             wait = _last_request[0] + MIN_INTERVAL - time.monotonic()
+            if deadline is not None and time.monotonic() + max(wait, 0) > deadline:
+                raise TimeoutError("the NYT queue is too long for the time you have left. Use other sources.")
             if wait > 0:
                 time.sleep(wait)
             _last_request[0] = time.monotonic()
@@ -58,12 +62,13 @@ def _get(params: dict) -> dict:
 
 
 def search(query: str, start_year: int | None = None, end_year: int | None = None,
-           place: str | None = None) -> list[dict]:
+           place: str | None = None, deadline: float | None = None) -> list[dict]:
     """Up to 5 articles matching query, most relevant first, as {headline, date, abstract, snippet, places, url}.
 
     place: an NYT location tag, to keep only articles the Times tagged with that place. Tags start in
     the 1980s and their spelling changed: 'LOWER EAST SIDE (NYC)' for the 1980s-90s, 'Lower East Side
     (Manhattan, NY)' for recent years. Before the 1980s, leave place out and put the name in query.
+    deadline: see _get.
     """
     key = (query, start_year, end_year, place)
     if key in _cache:
@@ -76,7 +81,7 @@ def search(query: str, start_year: int | None = None, end_year: int | None = Non
     if place:
         # The filter syntax changed in 2025: glocations:(...) now matches nothing.
         params["fq"] = f'timesTag.location:"{place}"'
-    docs = (_get(params).get("response") or {}).get("docs") or []
+    docs = (_get(params, deadline).get("response") or {}).get("docs") or []
     articles = [{
         "headline": (doc.get("headline") or {}).get("main", ""),
         "date": (doc.get("pub_date") or "")[:10],
