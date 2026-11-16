@@ -1018,7 +1018,9 @@ async def deep_research(question: str, hooks: PanelHooks, asked: str | None = No
     except (ModelBehaviorError, MaxTurnsExceeded) as e:
         # Once the rounds run out, research is gone from the Lead's tools, but the model sometimes
         # calls it anyway, which the SDK treats as fatal. Either way the research is over: write it up.
-        if isinstance(e, ModelBehaviorError) and "Tool research not found" not in str(e):
+        # The SDK words this as "Tool research not found in agent Lead" or "Tool research is
+        # currently disabled for agent Lead", depending on the version and the turn.
+        if isinstance(e, ModelBehaviorError) and not re.search(r"Tool '?research'? (not found|is currently disabled)", str(e)):
             raise
         if isinstance(e, MaxTurnsExceeded):
             reason = "used all its turns"

@@ -16,6 +16,17 @@ Open https://nyc-time-travel-git-484339235648.europe-west1.run.app/ in a browser
 - Type a question, or click one of the example questions under the box.
 - Name the neighborhood any way you like: official names ("Sunset Park"), informal ones ("Koreatown", "Little Germany"), or ones that mean several places ("Chinatown", "Little Italy"). If the name is ambiguous or the question is vague, the agent will ask a follow up question, and you can click an option.
 - The finished report goes to press as the front page: the overview as the lead story, with a lead picture. Below it is a timeline of the eras (Then & now). After that comes the settlement table (Who settled, and when; "The Record"), what remains ("Still Standing") and what the records don't show ("Corrections & Omissions"). Every fact ends with a link to its source.
+- Under the report: the fact-check desk's citation counts, the Photo Desk (cited photos, maps and newspaper pages), and the Newsroom, which shows each agent's full context and every tool call it made, live while the report is being written.
+
+### The `/chat` API
+
+`POST /chat` with `{"message": "...", "session_id": null}` runs the whole pipeline and returns
+`{"response", "session_id", "tool_calls"}`. `response` is the report in Markdown, or a follow-up
+question with its options as a bulleted list. Every agent's tool calls are in `tool_calls`, each as
+`{"agent", "name", "args", "result"}` (agents are "Clarifier", "Census desk", "Lead", "Researcher 1", …).
+To answer a follow-up question, send the answer as `message` with the same `session_id`.
+`POST /clear?session_id=...` forgets a session. The page itself uses `GET /run`, which streams the
+same run as Server-Sent Events.
 
 ## Data: sources, how to load it, and limits
 
@@ -56,60 +67,123 @@ To load it: it's plain JSON keyed by NTA code (`json.load(open("data/ntas.json")
 - **NYPL's openly available material skews old** In addition, coverage of any one block is hit or miss.
 - **Coverage varies a lot by neighborhood**, and the ~1960 era is thin almost everywhere. Thinly
   documented places get thinner answers by design.
-- **The time limits trade some depth for speed.** A loc.gov newspaper search takes about 30 seconds,
-  and NYT requests are spaced 12 seconds apart (the NYT's recommended pause), so a run gets about 14 NYT searches. So that every answer arrives within 5
-  minutes, research stops 170 seconds into a run, each researcher gets at most 90 seconds before it
-  reports what it has, and the citation revision runs only if it still fits (otherwise failing claims
-  are marked "(unverified)" straight away). If the Writer itself is slow (Vertex sometimes is), the page
-  gets the researchers' cited findings by era instead of a written report, so an answer still arrives
-  in time. The NYT key also has a daily request limit: once it's used up, researchers
-  skip the NYT until it resets, and the reports lean on the other sources.
-  
+- **The time limits trade some depth for speed.** A run gets about 14 NYT searches and at most 10
+  researchers; see [Staying under 5 minutes](#staying-under-5-minutes). The NYT key also has a daily
+  request limit: once it's used up, researchers skip the NYT until it resets, and the reports lean on
+  the other sources.
+
+## Staying under 5 minutes
+
+Early runs took about 10 minutes, and an answer has to arrive within 5. The archives are the slow
+part: a loc.gov search takes about 30 seconds, and the NYT allows one request every 12 seconds per
+key. So the run now has a time budget, enforced in code ([app.py](app.py)):
+
+- **A clock for the whole run.** Research stops 170 s in, no new round starts with under 40 s left,
+  and everything has to be done by 285 s. *Why:* the Writer needs the last ~100 s.
+- **90 seconds per researcher.** After that every tool answers "time's up" and the researcher reports
+  what it has; an archive call still in progress is abandoned. *Why:* the Lead waits for the slowest
+  researcher in a round, so one stuck on loc.gov held up the whole round. This change alone took a
+  10-minute run to about 5.
+- **Fewer slow searches.** Each researcher gets at most 3 searches of each slow archive and 5 page
+  reads, and loc.gov gets two tries of 20 s at most. Researchers in a round run in parallel.
+  *Why:* extra searches by one researcher delayed everyone.
+- **A shared NYT queue.** All researchers share one key, so requests go out 12 s apart. A request that
+  would wait past its researcher's deadline is dropped unsent, and once the daily quota is used up the
+  NYT is skipped for 15 minutes. *Why:* rate-limit errors and retries were using up researchers' time
+  (and quota) for nothing.
+- **A fallback when the Writer is slow.** The Writer gets whatever time is left; if Vertex can't
+  finish in time, the page shows the researchers' cited findings by era instead. Its model timeout
+  went up from 90 s to 240 s, since 90 s cut long reports off. *Why:* Vertex is sometimes slow, and a
+  late answer counts as no answer.
+- **The citation revision only if it fits.** It takes ~40 s, so it runs only with 45 s to spare;
+  otherwise failing claims are marked "(unverified)" straight away.
+
+The cost is depth: fewer searches per run, and a thinner report on a slow day.
 
 ## Sample queries
 
-Three test queries. For each: the expected answer, checked at the source before running the agent; an
-excerpt of the agent's answer; and the same model with no tools or system prompt
-(`vertex_ai/gemini-3.5-flash`, sent only the question). Full answers are in [samples/](samples/).
+These are the five example questions on the page (click one to run it). Three get a full report;
+two show the follow-up question the agent asks when a name is ambiguous or the question is vague.
+For each: the expected answer, checked at the source before reading the agent's answer; the agent's
+answer; and the same model with no tools or system prompt (`vertex_ai/gemini-3.5-flash`, sent only
+the question). Shortened answers, with both sides, are in [samples/](samples/). All were run on
+2026-11-16 with the code in this repo. That day the loc.gov newspaper search kept timing out, so no
+sample cites a pre-1955 newspaper page. The NYT key's daily limit ran out partway through sample 1;
+samples 2 and 3 were run again once the NYT was answering. Where a source failed, the reports say
+what they couldn't find instead of filling the gap.
 
-### 1. "What happened to Little Germany in the East Village after the General Slocum disaster?"
+Census shares below are of the foreign-born population, from the birthplace tables (2000 Census
+PCT019, ACS 2020–2024 B05006) for the neighborhood's census tracts.
 
-- **Expected:** the 1904 *General Slocum* fire killed over 1,000 residents, 784 of them from St. Mark's
-  Lutheran Church. It was the "symbolic end" of a community already moving uptown to Yorkville; St.
-  Mark's later became a synagogue. Source: LPC report [LP-2491](https://s-media.nyc.gov/agencies/lpc/lp/2491.pdf).
-- **Agent** (241 s, 7 researchers, 81 links): matches on every point, each linked to the landmark report,
-  a 1904 newspaper page or the NYT, and follows the neighborhood through all five eras.
-  [Full answer](samples/1-little-germany.md)
-- **No tools:** "Within just a few years of the tragedy, the neighborhood virtually vanished."
-- **Difference:** the model gets the date and names right but overstates the fire's effect, with no
-  sources. The agent matches the record.
+### 1. "How did Jackson Heights become one of the most diverse neighborhoods in the city?"
 
-### 2. "What did the Lower East Side's pushcart markets look like around 1910?"
+- **Expected:** a planned "garden apartment" development built by the Queensboro Corporation from
+  1910 into the early 1950s, after the Queensboro Bridge (1909) and the Roosevelt Avenue el (1917)
+  opened. Source: LPC [Jackson Heights Historic District report, LP-1831](https://s-media.nyc.gov/agencies/lpc/lp/1831.pdf).
+  Today it's Latin American and South Asian: Ecuador 15.4%, Colombia 14.6%, Mexico 11.7%,
+  Bangladesh 6.7%, India 6.6%; in 2000 Colombia led with 17.9%. Source: census
+  [2000](https://data.census.gov/table/DECENNIALSF32000.PCT019?g=1400000US36081027300,36081027500,36081027700,36081027900,36081028100,36081028300,36081028500,36081028700,36081028900,36081029100,36081030901,36081030902,36081032700,36081033700,36081033900,36081035100) and [2020–2024](https://data.census.gov/table/ACSDT5Y2024.B05006?g=1400000US36081027301,36081027302,36081027500,36081027701,36081027702,36081027900,36081028100,36081028300,36081028500,36081028700,36081028900,36081029100,36081030903,36081030904,36081030905,36081030906,36081032700,36081033700,36081033900,36081035100).
+- **Agent** (201 s, 2 rounds, 7 researchers, 61 links): the Queensboro Corporation, the garden apartments and the
+  transit lines from the landmark report, and every census share above, group by group.
+  [Answer, shortened](samples/1-jackson-heights.md)
+- **No tools:** the same developer and garden apartments, then the Colombian, South Asian and Himalayan
+  waves, with restrictive covenants and "160 languages" but no sources and no figures for who lives there now.
+- **Difference:** the model tells the story well; the agent adds who lives there now, with a link for
+  each figure, and shows that Ecuador-born residents have overtaken Colombia-born.
 
-- **Expected:** carts lining both sides of the street, women shopping for the Sabbath, barrels of
-  herring, peddlers calling in Yiddish. Source: The Evening World, April 14, 1905
-  ([page](https://www.loc.gov/resource/sn83030193/1905-04-14/ed-1/?sp=19)), and The Sun, April 12, 1908.
-- **Agent** (189 s, 1 researcher, 17 links): "Shoppers were overwhelmingly female, particularly on Friday
-  mornings as women prepared for the Sabbath by purchasing fish, fowl, fruits, vegetables, and challah"
-  ([The Evening World, 1905](https://www.loc.gov/resource/sn83030193/1905-04-14/ed-1/?sp=19)).
-  [Full answer](samples/2-pushcart-markets.md)
-- **No tools:** a vivid scene with cart rental prices and quoted cries ("Hees! Hees!") that no source
-  supports.
-- **Difference:** the agent's scene is plainer, but every detail comes from a reporter who was there.
+### 2. "How did downtown Flushing become a Chinatown?"
 
-### 3. "How did Brighton Beach become 'Little Odessa'?"
+- **Expected:** China-born residents went from 21.7% of the foreign-born in 2000 to 58.4% in
+  2020–2024. In 2000 Korea-born residents (19.8%) were almost as many as China-born, and India-born were 11.5%;
+  Korea-born are 4.7% today. Source: census for Flushing-Willets Point, [2000](https://data.census.gov/table/DECENNIALSF32000.PCT019?g=1400000US36081038300,36081079700,36081085300,36081085500,36081085700,36081085900,36081086500,36081087100,36081088902,36081116100) and
+  [2020–2024](https://data.census.gov/table/ACSDT5Y2024.B05006?g=1400000US36081038301,36081079701,36081079702,36081084901,36081084902,36081085300,36081085500,36081085700,36081085900,36081086500,36081086900,36081087100,36081088902,36081116100).
+- **Agent** (276 s, 2 rounds, 6 researchers, 59 links): the census shift exactly, Flushing as a department-store
+  hub in 1965 and a "growing Asian presence" driving development by the late 1980s (NYT), and the older
+  town from the landmark reports. One slip: it calls 58.4% a share of "the population"; it's of the
+  foreign-born. [Answer, shortened](samples/2-flushing.md)
+- **No tools:** a confident "Little Taipei" story of Taiwanese arrivals in the 1970s, with no sources;
+  in 2000 Taiwan-born residents were 4.9%, and it never mentions the Korean share.
+- **Difference:** the model's story may be right about the 1970s, but nothing backs it; the agent's
+  is narrower, dated and linked.
 
-- **Expected:** Soviet immigration, above all from Ukraine. Ukraine-born residents are the largest
-  foreign-born group: 28.1% in 2000, 24.3% in 2020–2024, with Russia second and Uzbekistan now third.
-  Source: census birthplace tables for
-  [2000](https://data.census.gov/table/DECENNIALSF32000.PCT019?g=1400000US36047036001,36047036002,36047036200,36047036400,36047036600,36047061002,36047061001)
-  and [2020–2024](https://data.census.gov/table/ACSDT5Y2024.B05006?g=1400000US36047036001,36047036002,36047036200,36047036400,36047036600,36047061002,36047061003,36047061004).
-- **Agent** (467 s, 8 researchers, 57 links; 2 claims marked "(unverified)"): the 1970s–80s Soviet wave
-  (NYT, 1985) and today's figures, Ukraine 24.3% and Russia 14.3%. [Full answer](samples/3-little-odessa.md)
-- **No tools:** the same story, including recent Central Asian arrivals, but no numbers or sources.
-- **Difference:** the closest pair; the agent adds the figures and a dated source for each step.
+### 3. "How did Little Haiti in Flatbush grow?"
 
-The page's example buttons are listed under [Example queries](#example-queries).
+- **Expected:** Haiti-born residents are the largest foreign-born group in Flatbush: 27.3% in 2000
+  and 25.0% in 2020–2024, ahead of Jamaica (15.8%, then 12.6%) and Trinidad and Tobago. Source: census
+  for Flatbush, [2000](https://data.census.gov/table/DECENNIALSF32000.PCT019?g=1400000US36047050800,36047051000,36047051200,36047051400,36047051600,36047076600,36047077000,36047077200,36047077400,36047078600,36047078800,36047079000,36047079200,36047079600) and [2020–2024](https://data.census.gov/table/ACSDT5Y2024.B05006?g=1400000US36047050801,36047050803,36047050804,36047051001,36047051002,36047051200,36047051400,36047051601,36047051602,36047076600,36047077000,36047077200,36047077400,36047078601,36047078801,36047079001,36047079201,36047079602).
+- **Agent** (264 s, 1 round, 6 researchers, 46 links; 1 claim marked "(unverified)"): the 1970s–80s Haitian and
+  West Indian influx and Haitian-Americans organizing politically by the late 1980s (NYT, 1990),
+  Flatbush's suburban beginnings from the landmark reports, and Haiti-born residents as the largest
+  foreign-born group today (25.0%). It found nothing for 1960 and says so; that line is the unverified
+  one. [Answer, shortened](samples/3-little-haiti.md)
+- **No tools:** a detailed history (the Duvalier-era waves, a 2018 designation, street boundaries) with
+  no sources and no numbers.
+- **Difference:** the model has more story; the agent has the figures and doesn't fill the gaps.
+
+### 4. "Who has called Sunset Park home over the last century?"
+
+- **Expected:** a follow-up question first: Sunset Park is three official neighborhoods. Then (for
+  Sunset Park West): German, English, Scottish and Irish workers, then the city's largest
+  Scandinavian community; Puerto Ricans from the 1950s; Chinese, Mexican, Ecuadorian and Dominican
+  immigrants from the 1980s. Source: LPC [Sunset Park South Historic District report, LP-2622](https://s-media.nyc.gov/agencies/lpc/lp/2622.pdf).
+  Today Mexico leads with 25.8% (24.7% in 2000). Source: census [2000](https://data.census.gov/table/DECENNIALSF32000.PCT019?g=1400000US36047000200,36047001800,36047002000,36047002200,36047007200,36047007400,36047007600,36047007800,36047008000,36047008200,36047008400,36047010100,36047014300,36047014500,36047014700) and [2020–2024](https://data.census.gov/table/ACSDT5Y2024.B05006?g=1400000US36047000200,36047001801,36047001802,36047001803,36047001804,36047002000,36047002200,36047007200,36047007400,36047007600,36047007800,36047008000,36047008200,36047008400,36047010100,36047014300,36047014500,36047014700).
+- **Agent** (asked which Sunset Park, then 285 s, 1 round, 6 researchers, 34 links; 7 claims marked
+  "(unverified)"): the Bush Terminal and the Scandinavian and Irish settlers from the landmark report,
+  and today's figures (Mexico 25.8%, Dominican Republic 14.7%, China 14.5%). The unverified claims are
+  four sentences without a link (three in the overview) and three "searched and didn't find" lines;
+  there was no time left for a revision. [Answer, shortened](samples/4-sunset-park.md)
+- **No tools:** the same story in the right order, with no question about which Sunset Park, no
+  numbers and no sources.
+- **Difference:** the closest pair; the agent adds the figures and a source for each step.
+
+### 5. "Take me to an immigrant neighborhood I've never heard of"
+
+- **Expected:** a follow-up question, since no neighborhood is named.
+- **Agent** (6 s): "Which of these historic New York immigrant neighborhoods would you like to
+  explore?" with Belmont, Kensington, Brighton Beach and Jackson Heights, each checked against the
+  official neighborhood list. [Answer](samples/5-vague.md)
+- **No tools:** an essay about the Hmong community of Frogtown, in Saint Paul, Minnesota.
+- **Difference:** without the system prompt the model doesn't know the question is about New York.
 
 ## How it works
 
