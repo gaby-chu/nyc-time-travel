@@ -72,40 +72,10 @@ To load it: it's plain JSON keyed by NTA code (`json.load(open("data/ntas.json")
   request limit: once it's used up, researchers skip the NYT until it resets, and the reports lean on
   the other sources.
 
-## Staying under 5 minutes
-
-Early runs took about 10 minutes, and an answer has to arrive within 5. The archives are the slow
-part: a loc.gov search takes about 30 seconds, and the NYT allows one request every 12 seconds per
-key. So the run now has a time budget, enforced in code ([app.py](app.py)):
-
-- **A clock for the whole run.** Research stops 170 s in, no new round starts with under 40 s left,
-  and everything has to be done by 285 s. *Why:* the Writer needs the last ~100 s.
-- **90 seconds per researcher.** After that every tool answers "time's up" and the researcher reports
-  what it has; an archive call still in progress is abandoned. *Why:* the Lead waits for the slowest
-  researcher in a round, so one stuck on loc.gov held up the whole round. This change alone took a
-  10-minute run to about 5.
-- **Fewer slow searches.** Each researcher gets at most 3 searches of each slow archive and 5 page
-  reads, and loc.gov gets two tries of 20 s at most. Researchers in a round run in parallel.
-  *Why:* extra searches by one researcher delayed everyone.
-- **A shared NYT queue.** All researchers share one key, so requests go out 12 s apart. A request that
-  would wait past its researcher's deadline is dropped unsent, and once the daily quota is used up the
-  NYT is skipped for 15 minutes. *Why:* rate-limit errors and retries were using up researchers' time
-  (and quota) for nothing.
-- **A fallback when the Writer is slow.** The Writer gets whatever time is left; if Vertex can't
-  finish in time, the page shows the researchers' cited findings by era instead. Its model timeout
-  went up from 90 s to 240 s, since 90 s cut long reports off. *Why:* Vertex is sometimes slow, and a
-  late answer counts as no answer.
-- **The citation revision only if it fits.** It takes ~40 s, so it runs only with 45 s to spare;
-  otherwise failing claims are marked "(unverified)" straight away.
-
-The cost is depth: fewer searches per run, and a thinner report on a slow day.
-
 ## Sample queries
 
-These are the five example questions on the page (click one to run it). Three get a full report;
-two show the follow-up question the agent asks when a name is ambiguous or the question is vague.
-For each: the expected answer, checked at the source before reading the agent's answer; the agent's
-answer; and the same model with no tools or system prompt (`vertex_ai/gemini-3.5-flash`, sent only
+Three of the example questions on the page (click one to run it). For each: the expected answer,
+checked at the source before reading the agent's answer; the agent's answer; and the same model with no tools or system prompt (`vertex_ai/gemini-3.5-flash`, sent only
 the question). Shortened answers, with both sides, are in [samples/](samples/). All were run on
 2026-11-16 with the code in this repo. That day the loc.gov newspaper search kept timing out, so no
 sample cites a pre-1955 newspaper page. The NYT key's daily limit ran out partway through sample 1;
@@ -160,86 +130,55 @@ PCT019, ACS 2020–2024 B05006) for the neighborhood's census tracts.
   no sources and no numbers.
 - **Difference:** the model has more story; the agent has the figures and doesn't fill the gaps.
 
-### 4. "Who has called Sunset Park home over the last century?"
-
-- **Expected:** a follow-up question first: Sunset Park is three official neighborhoods. Then (for
-  Sunset Park West): German, English, Scottish and Irish workers, then the city's largest
-  Scandinavian community; Puerto Ricans from the 1950s; Chinese, Mexican, Ecuadorian and Dominican
-  immigrants from the 1980s. Source: LPC [Sunset Park South Historic District report, LP-2622](https://s-media.nyc.gov/agencies/lpc/lp/2622.pdf).
-  Today Mexico leads with 25.8% (24.7% in 2000). Source: census [2000](https://data.census.gov/table/DECENNIALSF32000.PCT019?g=1400000US36047000200,36047001800,36047002000,36047002200,36047007200,36047007400,36047007600,36047007800,36047008000,36047008200,36047008400,36047010100,36047014300,36047014500,36047014700) and [2020–2024](https://data.census.gov/table/ACSDT5Y2024.B05006?g=1400000US36047000200,36047001801,36047001802,36047001803,36047001804,36047002000,36047002200,36047007200,36047007400,36047007600,36047007800,36047008000,36047008200,36047008400,36047010100,36047014300,36047014500,36047014700).
-- **Agent** (asked which Sunset Park, then 285 s, 1 round, 6 researchers, 34 links; 7 claims marked
-  "(unverified)"): the Bush Terminal and the Scandinavian and Irish settlers from the landmark report,
-  and today's figures (Mexico 25.8%, Dominican Republic 14.7%, China 14.5%). The unverified claims are
-  four sentences without a link (three in the overview) and three "searched and didn't find" lines;
-  there was no time left for a revision. [Answer, shortened](samples/4-sunset-park.md)
-- **No tools:** the same story in the right order, with no question about which Sunset Park, no
-  numbers and no sources.
-- **Difference:** the closest pair; the agent adds the figures and a source for each step.
-
-### 5. "Take me to an immigrant neighborhood I've never heard of"
-
-- **Expected:** a follow-up question, since no neighborhood is named.
-- **Agent** (6 s): "Which of these historic New York immigrant neighborhoods would you like to
-  explore?" with Belmont, Kensington, Brighton Beach and Jackson Heights, each checked against the
-  official neighborhood list. [Answer](samples/5-vague.md)
-- **No tools:** an essay about the Hmong community of Frogtown, in Saint Paul, Minnesota.
-- **Difference:** without the system prompt the model doesn't know the question is about New York.
+The page's other two examples show the follow-up question. "Who has called Sunset Park home over the
+last century?" asks which of the three official Sunset Parks you mean, then writes the report. "Take
+me to an immigrant neighborhood I've never heard of" asks you to pick from four NYC neighborhoods
+(Belmont, Kensington, Brighton Beach, Jackson Heights); with no tools or system prompt, the same model
+answers it with an essay about Saint Paul, Minnesota.
 
 ## How it works
 
 ```text
-question ─► CLARIFIER ─► which neighborhood? which question types and eras? in scope?
-              │            (not sure: reply with a question and options, and stop)
+question ─► CLARIFIER ─► one official neighborhood, question types, eras (or a follow-up question)
               ▼
-            LEAD ─► save_plan ─► research ×N in ONE turn ─► Researchers 1..N run in parallel,
-              ▲                                             each in a fresh context
-              │                                                   │
-              └── save_timeline ◄── findings ◄────────────────────┘
-                  gaps or contradictions? ─► research again (up to 2 more rounds)
+            LEAD ─► plan ─► Researchers 1..N in parallel, each in a fresh context
+              ▲                         │
+              └── timeline, gaps? ◄─────┘   (up to 2 more rounds)
               ▼
             WRITER ─► report from the timeline and findings only
               ▼
-            CITATION CHECK (code) ─► every claim cites a link? every link came from a tool?
-                                     no: one Writer revision, then mark what still fails "unverified"
+            CITATION CHECK (code) ─► one revision, then mark what still fails "(unverified)"
 ```
 
-| Agent | Job | Tools |
-| --- | --- | --- |
-| Clarifier | Turns the question into one official neighborhood (an NYC Neighborhood Tabulation Area, NTA), question types and eras; asks when the name is ambiguous or the question vague; turns away out-of-scope questions. For informal names it picks a street address it knows is there, and code checks the address against the real NTA boundaries | `resolve_neighborhood`, `neighborhood_at` |
-| Lead | Plans era × question type, sends Researchers (all in one turn so they run in parallel), saves a timeline, and sends more Researchers for gaps | `save_plan`, `research`, `save_timeline` |
-| Researcher (clones "Researcher 1", "Researcher 2", …) | One task, one era, in a fresh context: searches, reads the most relevant pages, and replies with cited bullets | the research tools below |
-| Writer | Writes the report from the question, timeline and findings only | none |
+- **Clarifier** (`resolve_neighborhood`, `neighborhood_at`): matches the name to an NYC Neighborhood
+  Tabulation Area, checking informal names by a street address inside it, and asks when unsure.
+- **Lead** (`save_plan`, `research`, `save_timeline`): plans era × question type, sends Researchers
+  in one turn, saves a timeline and sends more for gaps.
+- **Researchers** (Gemini Flash-Lite): one task and era each, with the research tools: `census_profile`,
+  `search_old_newspapers`, `read_old_newspaper_page`, `search_nyt`, `search_nypl`, `search_landmarks`,
+  `read_landmark_report`, `tax_photo_links`. Each tool is its own module (`census.py`, `loc.py`,
+  `nyt.py`, `nypl.py`, `lpc.py`, `geo.py`) with a smoke test: `uv run <module>.py`.
+- **Writer**: no tools; writes only from the question, timeline and findings.
 
-Before the Lead starts, code fetches the neighborhood's census birthplace figures for 2000 and today
-and adds them to the findings (the "Census desk" on the page), so every run's settlement table rests on
-the same numbers; what the Researchers find in the archives still varies from run to run.
+Before the Lead starts, code adds the census birthplace figures for 2000 and today (the "Census
+desk"). Caps are enforced in code: at most 10 Researchers and 3 rounds per run, and per Researcher
+5 reads, 3 searches of each slow archive and 90 seconds. The citation check is code
+([checker.py](checker.py)): every claim needs a link, and every link must have come from a tool. An
+LLM checker we tried flagged too many correct claims.
 
-Caps are enforced in code, not just asked for in prompts: at most 10 Researchers and 3 rounds per run
-(`research` disappears from the Lead's tools when they run out), at most 5 page/report reads and
-3 searches of each slow archive and 90 seconds per Researcher.
+## Staying under 5 minutes
 
-The citation check is code, not a model ([checker.py](checker.py)). We built an LLM Checker that
-judged each claim against its source, and dropped it: on our test runs it flagged many correct claims
-(including a census figure we checked by hand), adding cost and noise without catching real errors.
+Early runs took about 10 minutes, because the archives are slow: a loc.gov search takes ~30 s and the
+NYT allows one request every 12 s. What changed ([app.py](app.py)):
 
-### Research tools
-
-| Tool | What it does | Source |
-| --- | --- | --- |
-| `census_profile` | The largest ancestry, birthplace or language groups for a neighborhood and year, summed over its census tracts, with margins of error | US Census API: 2000 Census (SF3) and ACS 5-year 2010–2024; each figure links to its table on data.census.gov |
-| `search_old_newspapers` | Up to 5 NYC newspaper pages for 2–3 search words and a year range, with the matched snippet | Library of Congress, Chronicling America (loc.gov API) |
-| `read_old_newspaper_page` | A newspaper page's OCR text around the search words | Chronicling America |
-| `search_nyt` | Up to 5 NYT articles: headline, date, abstract or snippet, URL; optional place tag from 1981 | NYT Article Search API |
-| `search_nypl` | Up to 5 public-domain photos, maps and prints with title, date and collection; photos and maps also get a thumbnail for the page | NYPL Digital Collections API |
-| `search_landmarks` | Designated landmarks and historic districts in the neighborhood, by keyword, with their designation reports | NYC Landmarks Preservation Commission datasets (NYC Open Data) |
-| `read_landmark_report` | A designation report's text around the search words, with page numbers | LPC designation report PDFs |
-| `tax_photo_links` | The Municipal Archives' ~1940 and ~1985 tax photos of one building: a link to each photo, shown in the era that cites it | NYC GeoSearch + NYC Municipal Archives |
-
-Helpers, not sources: NYC GeoSearch (addresses) and the 2020 NTA boundaries and tract lists (see
-[Data](#data-sources-how-to-load-it-and-limits)). The tools are in their own modules (`census.py`,
-`loc.py`, `nyt.py`, `nypl.py`, `lpc.py`, `geo.py`), each with a smoke test you can run with
-`uv run <module>.py`. Tools return errors to the model as text instead of crashing.
-
+- **A run clock:** research stops at 170 s, no new round starts with under 40 s left, and the answer
+  is due by 285 s, leaving the Writer the last ~100 s.
+- **90 s per Researcher**, then its tools answer "time's up". The Lead waits for the slowest
+  Researcher, so one stuck on loc.gov used to hold up the whole round.
+- **Fewer slow calls:** 3 searches per slow archive per Researcher; NYT requests share one 12 s queue,
+  and a request that would arrive too late is dropped unsent.
+- **Fallbacks:** if the Writer runs out of time, the page shows the Researchers' cited findings by era;
+  the citation revision runs only with 45 s to spare, otherwise failing claims are marked "(unverified)".
 
 ## Team
 
