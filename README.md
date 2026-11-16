@@ -95,7 +95,7 @@ PCT019, ACS 2020–2024 B05006) for the neighborhood's census tracts.
   [2000](https://data.census.gov/table/DECENNIALSF32000.PCT019?g=1400000US36081027300,36081027500,36081027700,36081027900,36081028100,36081028300,36081028500,36081028700,36081028900,36081029100,36081030901,36081030902,36081032700,36081033700,36081033900,36081035100) and [2020–2024](https://data.census.gov/table/ACSDT5Y2024.B05006?g=1400000US36081027301,36081027302,36081027500,36081027701,36081027702,36081027900,36081028100,36081028300,36081028500,36081028700,36081028900,36081029100,36081030903,36081030904,36081030905,36081030906,36081032700,36081033700,36081033900,36081035100).
 - **Agent** (201 s, 2 rounds, 7 researchers, 61 links): the Queensboro Corporation, the garden apartments and the
   transit lines from the landmark report, and every census share above, group by group.
-  [Answer, shortened](samples/1-jackson-heights.md)
+  [Full answer](samples/1-jackson-heights.md)
 - **No tools:** the same developer and garden apartments, then the Colombian, South Asian and Himalayan
   waves, with restrictive covenants and "160 languages" but no sources and no figures for who lives there now.
 - **Difference:** the model tells the story well; the agent adds who lives there now, with a link for
@@ -110,7 +110,7 @@ PCT019, ACS 2020–2024 B05006) for the neighborhood's census tracts.
 - **Agent** (276 s, 2 rounds, 6 researchers, 59 links): the census shift exactly, Flushing as a department-store
   hub in 1965 and a "growing Asian presence" driving development by the late 1980s (NYT), and the older
   town from the landmark reports. One slip: it calls 58.4% a share of "the population"; it's of the
-  foreign-born. [Answer, shortened](samples/2-flushing.md)
+  foreign-born. [Full answer](samples/2-flushing.md)
 - **No tools:** a confident "Little Taipei" story of Taiwanese arrivals in the 1970s, with no sources;
   in 2000 Taiwan-born residents were 4.9%, and it never mentions the Korean share.
 - **Difference:** the model's story may be right about the 1970s, but nothing backs it; the agent's
@@ -125,7 +125,7 @@ PCT019, ACS 2020–2024 B05006) for the neighborhood's census tracts.
   West Indian influx and Haitian-Americans organizing politically by the late 1980s (NYT, 1990),
   Flatbush's suburban beginnings from the landmark reports, and Haiti-born residents as the largest
   foreign-born group today (25.0%). It found nothing for 1960 and says so; that line is the unverified
-  one. [Answer, shortened](samples/3-little-haiti.md)
+  one. [Full answer](samples/3-little-haiti.md)
 - **No tools:** a detailed history (the Duvalier-era waves, a 2018 designation, street boundaries) with
   no sources and no numbers.
 - **Difference:** the model has more story; the agent has the figures and doesn't fill the gaps.
