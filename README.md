@@ -154,11 +154,24 @@ question ─► CLARIFIER ─► one official neighborhood, question types, eras
   Tabulation Area, checking informal names by a street address inside it, and asks when unsure.
 - **Lead** (`save_plan`, `research`, `save_timeline`): plans era × question type, sends Researchers
   in one turn, saves a timeline and sends more for gaps.
-- **Researchers** (Gemini Flash-Lite): one task and era each, with the research tools: `census_profile`,
-  `search_old_newspapers`, `read_old_newspaper_page`, `search_nyt`, `search_nypl`, `search_landmarks`,
-  `read_landmark_report`, `tax_photo_links`. Each tool is its own module (`census.py`, `loc.py`,
-  `nyt.py`, `nypl.py`, `lpc.py`, `geo.py`) with a smoke test: `uv run <module>.py`.
+- **Researchers** (Gemini Flash-Lite): one task and era each, with the research tools below.
 - **Writer**: no tools; writes only from the question, timeline and findings.
+
+Research tools, and when the Researchers are told to use them:
+
+| Tool | Use it for |
+| --- | --- |
+| `census_profile` | Numbers: who lives here today and the change since 2000 (no data before 2000) |
+| `search_old_newspapers` | 1900–1920 and 1940: eyewitness descriptions of streets, markets and events (nothing after 1954) |
+| `read_old_newspaper_page` | The full page behind a newspaper search snippet that looks relevant |
+| `search_nyt` | 1960, 1980 and today, and when a group arrived or an institution opened or closed |
+| `search_nypl` | What a place looked like, in photos and maps, mostly before 1950 |
+| `search_landmarks` | What remains: designated buildings, who built them, and reports to read |
+| `read_landmark_report` | A building's history, and settlement history from historic-district reports |
+| `tax_photo_links` | 1940 and 1980: tax photos of one or two addresses other sources name |
+
+Each tool is its own module (`census.py`, `loc.py`, `nyt.py`, `nypl.py`, `lpc.py`, `geo.py`) with a
+smoke test: `uv run <module>.py`.
 
 Before the Lead starts, code adds the census birthplace figures for 2000 and today (the "Census
 desk"). Caps are enforced in code: at most 10 Researchers and 3 rounds per run, and per Researcher

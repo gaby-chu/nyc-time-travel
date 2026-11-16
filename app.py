@@ -291,7 +291,7 @@ def search_old_newspapers(ctx: RunContextWrapper[Research], terms: str, start_ye
     rich before 1923, thin after (some Yiddish dailies and the Daily Worker). Use it first for the
     1900-1920 era, and for 1940: eyewitness descriptions of streets, markets, churches, societies and
     events. Nothing from 1955 on: use search_nyt. Returns up to 5 pages with a matched snippet. Each search takes about 30 seconds,
-    and you get 3 (MAX_SEARCHES): make each count.
+    and you get 3: make each count.
 
     Args:
         terms: 2 or 3 words, e.g. 'Hester Street pushcart'. No years: use start_year and end_year.
@@ -341,7 +341,7 @@ def search_nyt(ctx: RunContextWrapper[Research], query: str, start_year: int, en
     """Search The New York Times archive (1851 to today). Use it for the 1960, 1980 and today eras,
     which have no old newspapers, and for when a group arrived or an institution opened or closed.
     Returns up to 5 articles: headline, date, abstract or snippet (many old articles have only a
-    headline), and URL. Not the full text. You get 3 searches (MAX_SEARCHES), and they queue on a
+    headline), and URL. Not the full text. You get 3 searches, and they queue on a
     shared key: make each count.
 
     Args:
